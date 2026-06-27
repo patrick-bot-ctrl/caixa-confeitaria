@@ -606,16 +606,300 @@ function Produtos({userId,produtos,onSalvar,onExcluir}){
   </div>;
 }
 
+
+// ─── FICHAS TÉCNICAS ──────────────────────────────────────────────────────────
+function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
+  const [tela,setTela]=useState("lista"); // lista | form | detalhe
+  const [fichaAtual,setFichaAtual]=useState(null);
+  const [nome,setNome]=useState("");
+  const [rendUnid,setRendUnid]=useState("1");
+  const [rendPeso,setRendPeso]=useState("");
+  const [unidPeso,setUnidPeso]=useState("g");
+  const [tempo,setTempo]=useState("");
+  const [custEmb,setCustEmb]=useState("");
+  const [custRot,setCustRot]=useState("");
+  const [custOut,setCustOut]=useState("");
+  const [obs,setObs]=useState("");
+  const [ingredientes,setIngredientes]=useState([]);
+  const [loading,setLoading]=useState(false);
+
+  const valorMin=config?(config.salario_mensal/config.horas_mes/60):0;
+  const custosFixosMes=config?.custos_fixos_mes||0;
+
+  function novoIngrediente(){
+    setIngredientes(prev=>[...prev,{id:Date.now(),insumo_id:"",nome_manual:"",quantidade:"",unidade:"g"}]);
+  }
+  function atualizaIngr(id,campo,val){
+    setIngredientes(prev=>prev.map(i=>i.id===id?{...i,[campo]:val}:i));
+  }
+  function removeIngr(id){setIngredientes(prev=>prev.filter(i=>i.id!==id));}
+
+  function custoIngrediente(ingr){
+    if(ingr.insumo_id){
+      const ins=insumos.find(x=>x.id===ingr.insumo_id);
+      if(!ins) return 0;
+      const cpu=ins.preco_embalagem/ins.qtd_embalagem;
+      return cpu*parseFloat(ingr.quantidade||0);
+    }
+    return 0;
+  }
+
+  const totalIngredientes=ingredientes.reduce((s,i)=>s+custoIngrediente(i),0);
+  const custoMaoObra=valorMin*parseFloat(tempo||0);
+  const custoEmbalagem=parseFloat(custEmb||0);
+  const custoRotulo=parseFloat(custRot||0);
+  const custoOutros=parseFloat(custOut||0);
+  const custoTotal=totalIngredientes+custoMaoObra+custoEmbalagem+custoRotulo+custoOutros;
+  const unidades=parseInt(rendUnid||1);
+  const custoPorUnidade=unidades>0?custoTotal/unidades:0;
+
+  function calcDRE(ficha){
+    const vm=config?(config.salario_mensal/config.horas_mes/60):0;
+    const ingrs=ficha.ficha_ingredientes||[];
+    const totIngr=ingrs.reduce((s,i)=>{
+      const ins=insumos.find(x=>x.id===i.insumo_id);
+      if(!ins) return s;
+      return s+(ins.preco_embalagem/ins.qtd_embalagem)*i.quantidade;
+    },0);
+    const mo=vm*(ficha.tempo_preparo_min||0);
+    const emb=(ficha.custo_embalagem||0)+(ficha.custo_rotulo||0)+(ficha.custo_outros||0);
+    const total=totIngr+mo+emb;
+    const u=ficha.rendimento_unidades||1;
+    return {totIngr,mo,emb,total,custoPorUnidade:total/u};
+  }
+
+  async function salvar(){
+    if(!nome.trim()) return;
+    setLoading(true);
+    const payload={user_id:userId,nome,rendimento_unidades:parseInt(rendUnid)||1,
+      rendimento_peso:parseFloat(rendPeso)||0,unidade_peso:unidPeso,
+      tempo_preparo_min:parseInt(tempo)||0,custo_embalagem:parseFloat(custEmb)||0,
+      custo_rotulo:parseFloat(custRot)||0,custo_outros:parseFloat(custOut)||0,observacoes:obs};
+    let fichaId=fichaAtual?.id;
+    if(fichaId){
+      await supabase.from("fichas_tecnicas").update(payload).eq("id",fichaId);
+      await supabase.from("ficha_ingredientes").delete().eq("ficha_id",fichaId);
+    } else {
+      const {data}=await supabase.from("fichas_tecnicas").insert(payload).select().single();
+      fichaId=data?.id;
+    }
+    if(fichaId&&ingredientes.length>0){
+      const rows=ingredientes.filter(i=>i.insumo_id&&i.quantidade).map(i=>({
+        ficha_id:fichaId,insumo_id:i.insumo_id,quantidade:parseFloat(i.quantidade),unidade:i.unidade
+      }));
+      if(rows.length>0) await supabase.from("ficha_ingredientes").insert(rows);
+    }
+    const {data:updated}=await supabase.from("fichas_tecnicas")
+      .select("*,ficha_ingredientes(*)").eq("id",fichaId).single();
+    setLoading(false);
+    if(updated){onSalvar(updated,!!fichaAtual);limpar();}
+  }
+
+  function limpar(){
+    setNome("");setRendUnid("1");setRendPeso("");setUnidPeso("g");
+    setTempo("");setCustEmb("");setCustRot("");setCustOut("");setObs("");
+    setIngredientes([]);setFichaAtual(null);setTela("lista");
+  }
+
+  function editarFicha(f){
+    setFichaAtual(f);setNome(f.nome);setRendUnid(String(f.rendimento_unidades||1));
+    setRendPeso(String(f.rendimento_peso||""));setUnidPeso(f.unidade_peso||"g");
+    setTempo(String(f.tempo_preparo_min||""));setCustEmb(String(f.custo_embalagem||""));
+    setCustRot(String(f.custo_rotulo||""));setCustOut(String(f.custo_outros||""));
+    setObs(f.observacoes||"");
+    setIngredientes((f.ficha_ingredientes||[]).map(i=>({...i,id:i.id})));
+    setTela("form");
+  }
+
+  async function excluir(id){
+    await supabase.from("fichas_tecnicas").delete().eq("id",id);
+    onExcluir(id);
+  }
+
+  // ── LISTA ──
+  if(tela==="lista") return <div style={{display:"flex",flexDirection:"column",gap:12}}>
+    <Btn onClick={()=>setTela("form")} style={{width:"100%"}}>➕ Nova Ficha Técnica</Btn>
+    {fichas.length===0&&<p style={{fontFamily:"system-ui",fontSize:13,color:T.chocoM,padding:"8px 0"}}>Nenhuma ficha cadastrada ainda.</p>}
+    {fichas.map(f=>{
+      const dre=calcDRE(f);
+      return <Card key={f.id} style={{padding:"14px 16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"system-ui",fontSize:14,color:T.choco,fontWeight:700}}>{f.nome}</div>
+            <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,marginTop:3}}>
+              Rende {f.rendimento_unidades}un {f.rendimento_peso>0?`· ${f.rendimento_peso}${f.unidade_peso}`:""}
+            </div>
+            <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM}}>
+              ⏱ {f.tempo_preparo_min}min · {(f.ficha_ingredientes||[]).length} ingredientes
+            </div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontFamily:"Georgia,serif",fontSize:16,color:T.amarelo,fontWeight:700}}>{brl(dre.custoPorUnidade)}</div>
+            <div style={{fontFamily:"system-ui",fontSize:10,color:T.chocoL}}>custo/unidade</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <Btn variant="ghost" style={{flex:1,padding:"6px 0",fontSize:11}} onClick={()=>{setFichaAtual(f);setTela("detalhe");}}>📊 DRE</Btn>
+          <Btn variant="ghost" style={{flex:1,padding:"6px 0",fontSize:11}} onClick={()=>editarFicha(f)}>✏️ Editar</Btn>
+          <Btn variant="danger" style={{flex:1,padding:"6px 0",fontSize:11}} onClick={()=>excluir(f.id)}>🗑️</Btn>
+        </div>
+      </Card>;
+    })}
+  </div>;
+
+  // ── DRE DETALHE ──
+  if(tela==="detalhe"&&fichaAtual){
+    const dre=calcDRE(fichaAtual);
+    const itens=[
+      {label:"🧂 Ingredientes",valor:dre.totIngr,cor:T.azul},
+      {label:"📦 Embalagem + Rótulo",valor:dre.emb,cor:T.roxo},
+      {label:"👩‍🍳 Mão de obra",valor:dre.mo,cor:T.amarelo},
+    ];
+    return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <button onClick={()=>setTela("lista")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:T.chocoM,textAlign:"left",padding:0}}>← Voltar</button>
+      <Card style={{background:T.choco}}>
+        <div style={{fontFamily:"Georgia,serif",fontSize:18,color:T.rosaL,fontWeight:700,marginBottom:4}}>{fichaAtual.nome}</div>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:"rgba(255,255,255,.5)"}}>Rende {fichaAtual.rendimento_unidades} unidades · {fichaAtual.tempo_preparo_min}min</div>
+        <div style={{marginTop:14,display:"flex",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700}}>CUSTO TOTAL</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:24,color:"#fff",fontWeight:700}}>{brl(dre.total)}</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700}}>CUSTO/UNIDADE</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:24,color:T.rosaL,fontWeight:700}}>{brl(dre.custoPorUnidade)}</div>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoL,fontWeight:700,marginBottom:12,letterSpacing:.5}}>BREAKDOWN DE CUSTOS</div>
+        {itens.map(it=>{
+          const p=dre.total>0?(it.valor/dre.total*100):0;
+          return <div key={it.label} style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontFamily:"system-ui",fontSize:13,color:T.choco}}>{it.label}</span>
+              <span style={{fontFamily:"Georgia,serif",fontSize:13,color:it.cor,fontWeight:700}}>{brl(it.valor)} <span style={{fontSize:11,color:T.chocoL}}>({p.toFixed(1)}%)</span></span>
+            </div>
+            <div style={{height:6,background:T.borda,borderRadius:99}}>
+              <div style={{width:`${p}%`,height:"100%",background:it.cor,borderRadius:99,transition:"width .3s"}}/>
+            </div>
+          </div>;
+        })}
+      </Card>
+
+      <Card>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoL,fontWeight:700,marginBottom:12,letterSpacing:.5}}>INGREDIENTES</div>
+        {(fichaAtual.ficha_ingredientes||[]).map(i=>{
+          const ins=insumos.find(x=>x.id===i.insumo_id);
+          const custo=ins?(ins.preco_embalagem/ins.qtd_embalagem)*i.quantidade:0;
+          return <div key={i.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${T.borda}`}}>
+            <span style={{fontFamily:"system-ui",fontSize:13,color:T.choco}}>{ins?.nome||"Insumo"} — {i.quantidade}{i.unidade}</span>
+            <span style={{fontFamily:"Georgia,serif",fontSize:13,color:T.azul,fontWeight:700}}>{brl(custo)}</span>
+          </div>;
+        })}
+      </Card>
+
+      <Card style={{background:T.amareloL,border:`1.5px solid #f0d080`}}>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.amarelo,fontWeight:700,marginBottom:8}}>💡 SUGESTÃO DE PREÇO</div>
+        {[30,40,50].map(m=><div key={m} style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
+          <span style={{fontFamily:"system-ui",fontSize:13,color:T.choco}}>Margem {m}%</span>
+          <span style={{fontFamily:"Georgia,serif",fontSize:14,color:T.choco,fontWeight:700}}>{brl(dre.custoPorUnidade/(1-m/100))}</span>
+        </div>)}
+      </Card>
+    </div>;
+  }
+
+  // ── FORMULÁRIO ──
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <button onClick={limpar} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:T.chocoM,textAlign:"left",padding:0}}>← Voltar</button>
+    <Card>
+      <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>
+        {fichaAtual?"✏️ EDITANDO FICHA":"📋 NOVA FICHA TÉCNICA"}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <Input label="Nome da receita" value={nome} onChange={setNome} placeholder="Ex: Brigadeiro Tradicional"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Input label="Rende (unidades)" type="number" value={rendUnid} onChange={setRendUnid} placeholder="20"/>
+          <Input label="Peso total" type="number" value={rendPeso} onChange={setRendPeso} placeholder="500"/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Select label="Unidade peso" value={unidPeso} onChange={setUnidPeso} options={["g","kg","ml","L"].map(u=>({value:u,label:u}))}/>
+          <Input label="⏱ Tempo preparo (min)" type="number" value={tempo} onChange={setTempo} placeholder="60"/>
+        </div>
+      </div>
+    </Card>
+
+    <Card>
+      <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>🧂 INGREDIENTES</div>
+      {ingredientes.map(ingr=>{
+        const ins=insumos.find(x=>x.id===ingr.insumo_id);
+        const custo=custoIngrediente(ingr);
+        return <div key={ingr.id} style={{marginBottom:12,padding:"10px 12px",background:T.cremedark,borderRadius:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontFamily:"system-ui",fontSize:12,color:T.chocoM,fontWeight:600}}>Ingrediente</span>
+            <button onClick={()=>removeIngr(ingr.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.vermelho,fontSize:16}}>✕</button>
+          </div>
+          <Select label="" value={ingr.insumo_id} onChange={v=>atualizaIngr(ingr.id,"insumo_id",v)}
+            options={[{value:"",label:"Selecione o insumo..."},...insumos.map(i=>({value:i.id,label:`${i.nome} (${i.unidade})`}))]}/>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8,marginTop:8}}>
+            <Input label="Quantidade" type="number" value={ingr.quantidade} onChange={v=>atualizaIngr(ingr.id,"quantidade",v)} placeholder="0"/>
+            <Select label="Un." value={ingr.unidade} onChange={v=>atualizaIngr(ingr.id,"unidade",v)} options={UNIDADES.map(u=>({value:u,label:u}))}/>
+          </div>
+          {custo>0&&<div style={{fontFamily:"system-ui",fontSize:11,color:T.azul,fontWeight:600,marginTop:6}}>Custo: {brl(custo)}</div>}
+        </div>;
+      })}
+      <Btn variant="ghost" onClick={novoIngrediente} style={{width:"100%",fontSize:12}}>+ Adicionar ingrediente</Btn>
+    </Card>
+
+    <Card>
+      <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>📦 CUSTOS ADICIONAIS</div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <Input label="Embalagem (R$)" type="number" value={custEmb} onChange={setCustEmb} placeholder="0,00"/>
+        <Input label="Rótulo / Adesivo (R$)" type="number" value={custRot} onChange={setCustRot} placeholder="0,00"/>
+        <Input label="Outros custos (R$)" type="number" value={custOut} onChange={setCustOut} placeholder="0,00"/>
+        <Input label="Observações" value={obs} onChange={setObs} placeholder="Notas sobre a receita..."/>
+      </div>
+    </Card>
+
+    {custoTotal>0&&<Card style={{background:T.choco}}>
+      <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,marginBottom:10}}>PRÉVIA DO CUSTO</div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Ingredientes</span>
+        <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(totalIngredientes)}</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Mão de obra ({tempo||0}min)</span>
+        <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoMaoObra)}</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Embalagem + outros</span>
+        <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoEmbalagem+custoRotulo+custoOutros)}</span>
+      </div>
+      <div style={{borderTop:"1px solid rgba(255,255,255,.15)",paddingTop:10,display:"flex",justifyContent:"space-between"}}>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"#fff",fontWeight:700}}>Custo/unidade</span>
+        <span style={{fontFamily:"Georgia,serif",fontSize:18,color:T.rosaL,fontWeight:700}}>{brl(custoPorUnidade)}</span>
+      </div>
+    </Card>}
+
+    <div style={{display:"flex",gap:8}}>
+      <Btn loading={loading} style={{flex:1}} onClick={salvar} disabled={!nome}>{fichaAtual?"✓ Salvar":"📋 Criar Ficha"}</Btn>
+      <Btn variant="ghost" onClick={limpar}>Cancelar</Btn>
+    </div>
+  </div>;
+}
+
 // ─── PRECIFICAÇÃO (container com subabas) ─────────────────────────────────────
-function Precificacao({userId,produtos,insumos,onSalvarProduto,onExcluirProduto,onSalvarInsumo,onExcluirInsumo}){
+function Precificacao({userId,produtos,insumos,fichas,config,onSalvarProduto,onExcluirProduto,onSalvarInsumo,onExcluirInsumo,onSalvarFicha,onExcluirFicha}){
   const [sub,setSub]=useState("produtos");
   return <div style={{padding:"20px 16px",display:"flex",flexDirection:"column",gap:16}}>
     <h2 style={{fontFamily:"Georgia,serif",fontSize:20,color:T.choco,margin:0}}>🎂 Precificação</h2>
     <SubAba
-      abas={[{id:"produtos",emoji:"🎂",label:"Produtos"},{id:"insumos",emoji:"🧂",label:"Insumos"}]}
+      abas={[{id:"produtos",emoji:"🎂",label:"Produtos"},{id:"insumos",emoji:"🧂",label:"Insumos"},{id:"fichas",emoji:"📋",label:"Fichas"}]}
       ativa={sub} onChange={setSub}/>
     {sub==="produtos"&&<Produtos userId={userId} produtos={produtos} onSalvar={onSalvarProduto} onExcluir={onExcluirProduto}/>}
     {sub==="insumos"&&<Insumos userId={userId} insumos={insumos} onSalvar={onSalvarInsumo} onExcluir={onExcluirInsumo}/>}
+    {sub==="fichas"&&<FichasTecnicas userId={userId} fichas={fichas} insumos={insumos} config={config} onSalvar={onSalvarFicha} onExcluir={onExcluirFicha}/>}
   </div>;
 }
 
@@ -689,7 +973,7 @@ function Config({userId,config,onSalvar}){
     <Card style={{background:T.cremedark}}>
       <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:8}}>🔜 EM BREVE</div>
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {["Taxas de plataformas (iFood, 99food...)","Taxas de cartão (débito/crédito)","Ficha técnica completa com DRE","Relatório mensal PDF"].map(item=>
+        {["Taxas de plataformas (iFood, 99food...)","Taxas de cartão (débito/crédito)","Relatório mensal PDF"].map(item=>
           <div key={item} style={{fontFamily:"system-ui",fontSize:12,color:T.chocoL,display:"flex",alignItems:"center",gap:6}}>
             <span>⏳</span>{item}
           </div>
@@ -709,6 +993,7 @@ export default function App(){
   const [despesas,setDespesas]=useState([]);
   const [insumos,setInsumos]=useState([]);
   const [config,setConfig]=useState(null);
+  const [fichas,setFichas]=useState([]);
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{
@@ -721,25 +1006,27 @@ export default function App(){
   useEffect(()=>{
     if(!user) return;
     async function load(){
-      const [p,v,d,i,c]=await Promise.all([
+      const [p,v,d,i,c,ft]=await Promise.all([
         supabase.from("produtos").select("*").eq("user_id",user.id).order("created_at"),
         supabase.from("vendas").select("*").eq("user_id",user.id).order("data").order("hora"),
         supabase.from("despesas").select("*").eq("user_id",user.id).order("data").order("hora"),
         supabase.from("insumos").select("*").eq("user_id",user.id).order("nome"),
         supabase.from("config_confeitaria").select("*").eq("user_id",user.id).single(),
+        supabase.from("fichas_tecnicas").select("*,ficha_ingredientes(*)").eq("user_id",user.id).order("created_at"),
       ]);
       setProdutos(p.data||[]);
       setVendas(v.data||[]);
       setDespesas(d.data||[]);
       setInsumos(i.data||[]);
       setConfig(c.data||null);
+      setFichas(ft.data||[]);
     }
     load();
   },[user]);
 
   async function handleLogout(){
     await supabase.auth.signOut();
-    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);
+    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);
   }
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.choco}}>
@@ -755,11 +1042,13 @@ export default function App(){
       {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} setTela={setTela} onLogout={handleLogout}/>}
       {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos}
         onNovaVenda={v=>setVendas(p=>[...p,v])} onNovaDespesa={d=>setDespesas(p=>[...p,d])}/>}
-      {tela==="precificacao"&&<Precificacao userId={user.id} produtos={produtos} insumos={insumos}
+      {tela==="precificacao"&&<Precificacao userId={user.id} produtos={produtos} insumos={insumos} fichas={fichas} config={config}
         onSalvarProduto={(p,e)=>setProdutos(prev=>e?prev.map(x=>x.id===p.id?p:x):[...prev,p])}
         onExcluirProduto={id=>setProdutos(p=>p.filter(x=>x.id!==id))}
         onSalvarInsumo={(i,e)=>setInsumos(prev=>e?prev.map(x=>x.id===i.id?i:x):[...prev,i])}
-        onExcluirInsumo={id=>setInsumos(p=>p.filter(x=>x.id!==id))}/>}
+        onExcluirInsumo={id=>setInsumos(p=>p.filter(x=>x.id!==id))}
+        onSalvarFicha={(f,e)=>setFichas(prev=>e?prev.map(x=>x.id===f.id?f:x):[...prev,f])}
+        onExcluirFicha={id=>setFichas(p=>p.filter(x=>x.id!==id))}/>}
       {tela==="config"&&<Config userId={user.id} config={config} onSalvar={c=>setConfig(c)}/>}
     </div>
   </div>;
