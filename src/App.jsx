@@ -245,7 +245,9 @@ function Caixa({userId,vendas,despesas,produtos,onNovaVenda,onNovaDespesa}){
   const [descricao,setDescricao]=useState("");
   const [valor,setValor]=useState("");
   const [formaPgtoD,setFormaPgtoD]=useState("pix");
+  const [fotoCupom,setFotoCupom]=useState(null);
   const [loading,setLoading]=useState(false);
+  const [modalFoto,setModalFoto]=useState(null);
 
   const prodSel=produtos.find(p=>p.id===produtoId);
   const totalV=prodSel?precoFinal(prodSel)*parseInt(qtd||1):0;
@@ -266,11 +268,23 @@ function Caixa({userId,vendas,despesas,produtos,onNovaVenda,onNovaDespesa}){
   async function registrarDespesa(){
     if(!descricao.trim()||!valor) return;
     setLoading(true);
+    let cupom_url=null;
+    if(fotoCupom){
+      const ext=fotoCupom.name.split(".").pop();
+      const path=`${userId}/${Date.now()}.${ext}`;
+      const {error:upErr}=await supabase.storage.from("cupons").upload(path,fotoCupom);
+      if(!upErr) cupom_url=path;
+    }
     const {data,error}=await supabase.from("despesas").insert({
-      user_id:userId,descricao,valor:parseFloat(valor),data:hoje(),hora:horaAgora(),forma_pgto:formaPgtoD
+      user_id:userId,descricao,valor:parseFloat(valor),data:hoje(),hora:horaAgora(),forma_pgto:formaPgtoD,cupom_url
     }).select().single();
     setLoading(false);
-    if(!error){onNovaDespesa(data);setDescricao("");setValor("");setFormaPgtoD("pix");}
+    if(!error){onNovaDespesa(data);setDescricao("");setValor("");setFormaPgtoD("pix");setFotoCupom(null);}
+  }
+
+  async function verFoto(path){
+    const {data}=await supabase.storage.from("cupons").createSignedUrl(path,60);
+    if(data?.signedUrl) setModalFoto(data.signedUrl);
   }
 
   return <div style={{padding:"20px 16px",display:"flex",flexDirection:"column",gap:18}}>
@@ -317,9 +331,28 @@ function Caixa({userId,vendas,despesas,produtos,onNovaVenda,onNovaDespesa}){
             </button>)}
           </div>
         </div>
+        <div>
+          <div style={{fontFamily:"system-ui",fontSize:12,color:T.chocoM,fontWeight:600,marginBottom:8}}>Cupom fiscal (opcional)</div>
+          <label style={{display:"flex",alignItems:"center",gap:10,background:fotoCupom?T.verdeL:T.cremedark,border:`1.5px dashed ${fotoCupom?T.verde:T.borda}`,borderRadius:10,padding:"10px 14px",cursor:"pointer"}}>
+            <input type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>setFotoCupom(e.target.files[0]||null)}/>
+            <span style={{fontSize:20}}>{fotoCupom?"✅":"📷"}</span>
+            <span style={{fontFamily:"system-ui",fontSize:13,fontWeight:600,color:fotoCupom?T.verde:T.chocoM}}>
+              {fotoCupom?`${fotoCupom.name.slice(0,25)}...`:"Tirar foto ou escolher da galeria"}
+            </span>
+            {fotoCupom&&<button onClick={e=>{e.preventDefault();setFotoCupom(null);}} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",fontSize:16,color:T.chocoL}}>✕</button>}
+          </label>
+        </div>
         <Btn variant="danger" loading={loading} onClick={registrarDespesa} disabled={!descricao||!valor}>📤 Registrar Despesa</Btn>
       </div>
     </Card>}
+
+    {modalFoto&&<div onClick={()=>setModalFoto(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{position:"relative",maxWidth:400,width:"100%"}}>
+        <img src={modalFoto} alt="Cupom" style={{width:"100%",borderRadius:12,display:"block"}}/>
+        <button onClick={()=>setModalFoto(null)} style={{position:"absolute",top:-12,right:-12,width:32,height:32,borderRadius:"50%",background:T.vermelho,border:"none",color:"#fff",fontSize:16,cursor:"pointer",fontWeight:700}}>✕</button>
+        <p style={{textAlign:"center",color:"rgba(255,255,255,.6)",fontFamily:"system-ui",fontSize:12,marginTop:10}}>Toque fora para fechar</p>
+      </div>
+    </div>}
 
     {aba==="historico"&&<>
       <Card style={{background:T.choco}}>
@@ -347,6 +380,24 @@ function Caixa({userId,vendas,despesas,produtos,onNovaVenda,onNovaDespesa}){
           return <div key={f.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${T.borda}`}}>
             <span style={{fontFamily:"system-ui",fontSize:13,color:T.choco}}>{f.emoji} {f.label}</span>
             <span style={{fontFamily:"Georgia,serif",fontSize:13,color:T.verde,fontWeight:700}}>{brl(tot)}</span>
+          </div>;
+        })}
+      </Card>
+
+      <Card>
+        <div style={{fontFamily:"system-ui",fontSize:10,color:T.chocoL,fontWeight:700,marginBottom:10}}>DESPESAS DE HOJE</div>
+        {despesas.filter(d=>d.data===hoje()).length===0&&<p style={{fontFamily:"system-ui",fontSize:13,color:T.chocoM}}>Nenhuma despesa hoje.</p>}
+        {despesas.filter(d=>d.data===hoje()).map(d=>{
+          const fp=FORMAS_PGTO.find(f=>f.id===d.forma_pgto);
+          return <div key={d.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.borda}`}}>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:"system-ui",fontSize:13,color:T.choco,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                {d.descricao}
+                {d.cupom_url&&<button onClick={()=>verFoto(d.cupom_url)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:0}} title="Ver cupom">🧾</button>}
+              </div>
+              <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM}}>{fp?.emoji} {fp?.label} · {d.hora}</div>
+            </div>
+            <span style={{fontFamily:"Georgia,serif",fontSize:13,color:T.vermelho,fontWeight:700}}>-{brl(d.valor)}</span>
           </div>;
         })}
       </Card>
