@@ -21,8 +21,8 @@ const T = {
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const brl = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const pct = v => `${(v||0).toFixed(1)}%`;
-const hoje = () => new Date().toISOString().split("T")[0];
-const horaAgora = () => new Date().toTimeString().slice(0,5);
+const hoje = () => new Date().toLocaleDateString("pt-BR", {timeZone:"America/Sao_Paulo"}).split("/").reverse().join("-");
+const horaAgora = () => new Date().toLocaleTimeString("pt-BR", {timeZone:"America/Sao_Paulo", hour:"2-digit", minute:"2-digit"});
 // MARGEM REAL: preço = custo ÷ (1 - margem/100)
 const precoFinal = p => p.custo / (1 - Math.min(p.margem,99) / 100);
 
