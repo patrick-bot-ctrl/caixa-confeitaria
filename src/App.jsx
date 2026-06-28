@@ -204,7 +204,7 @@ function Nav({tela,setTela}){
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtual,totalVendasMes,totalDespMes,totalAjustesMes,setTela,onLogout,onAbrirSaldo}){
+function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtual,totalVendasMes,totalDespMes,totalAjustesMes,setTela,onLogout,onAbrirSaldo,setShowRelatorio}){
   const nome=user?.user_metadata?.nome_confeitaria||"Confeitaria";
   const vendasHoje=vendas.filter(v=>v.data===hoje()).reduce((s,v)=>s+v.total,0);
 
@@ -272,6 +272,28 @@ function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtua
       <div style={{fontFamily:"system-ui",fontSize:10,color:T.chocoM,fontWeight:700,marginBottom:3}}>⭐ PRODUTO DESTAQUE</div>
       <div style={{fontFamily:"Georgia,serif",fontSize:14,color:T.choco}}>{maisVendido}</div>
     </Card>}
+
+    {/* Card resumido do mês */}
+    <Card style={{padding:"14px 16px",cursor:"pointer",border:`1.5px solid ${T.borda}`}} onClick={()=>setShowRelatorio(true)}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,letterSpacing:.5}}>📊 RESUMO DO MÊS</div>
+        <span style={{fontFamily:"system-ui",fontSize:12,color:T.rosa,fontWeight:600}}>Ver completo →</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div style={{background:T.verdeL,borderRadius:10,padding:"10px 12px"}}>
+          <div style={{fontFamily:"system-ui",fontSize:10,color:T.verde,fontWeight:700}}>RECEITA</div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:16,color:T.verde,fontWeight:700}}>{brl(totalVendasMes)}</div>
+        </div>
+        <div style={{background:T.vermelhoL,borderRadius:10,padding:"10px 12px"}}>
+          <div style={{fontFamily:"system-ui",fontSize:10,color:T.vermelho,fontWeight:700}}>DESPESAS</div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:16,color:T.vermelho,fontWeight:700}}>{brl(totalDespMes)}</div>
+        </div>
+      </div>
+      <div style={{marginTop:8,background:totalVendasMes-totalDespMes>=0?T.verdeL:T.vermelhoL,borderRadius:10,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontFamily:"system-ui",fontSize:12,color:totalVendasMes-totalDespMes>=0?T.verde:T.vermelho,fontWeight:700}}>Lucro líquido</span>
+        <span style={{fontFamily:"Georgia,serif",fontSize:16,color:totalVendasMes-totalDespMes>=0?T.verde:T.vermelho,fontWeight:700}}>{brl(totalVendasMes-totalDespMes)}</span>
+      </div>
+    </Card>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
       <Btn variant="primary" onClick={()=>setTela("caixa")}>💰 Nova Venda</Btn>
@@ -1165,6 +1187,164 @@ function Precificacao({userId,produtos,insumos,fichas,config,onSalvarProduto,onE
   </div>;
 }
 
+
+// ─── RELATÓRIO MENSAL ─────────────────────────────────────────────────────────
+function RelatorioMensal({vendas,despesas,ajustes,saldoMensalData,onFechar}){
+  const now=new Date();
+  const [ano,setAno]=useState(now.getFullYear());
+  const [mes,setMes]=useState(now.getMonth()+1);
+
+  const MESES=["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+  function navMes(dir){
+    let m=mes+dir, a=ano;
+    if(m>12){m=1;a++;}
+    if(m<1){m=12;a--;}
+    setMes(m);setAno(a);
+  }
+
+  const vendasMes=vendas.filter(v=>{const[a,m]=v.data.split("-");return parseInt(a)===ano&&parseInt(m)===mes;});
+  const despesasMes=despesas.filter(d=>{const[a,m]=d.data.split("-");return parseInt(a)===ano&&parseInt(m)===mes;});
+  const ajustesMes=ajustes.filter(a=>{const[aa,m]=a.data.split("-");return parseInt(aa)===ano&&parseInt(m)===mes;});
+
+  const totalReceita=vendasMes.reduce((s,v)=>s+v.total,0);
+  const totalDespesas=despesasMes.reduce((s,d)=>s+d.valor,0);
+  const totalAjustes=ajustesMes.reduce((s,a)=>s+a.valor,0);
+  const smData=saldoMensalData?.find(s=>s.ano===ano&&s.mes===mes);
+  const saldoInicial=smData?.saldo_inicial||0;
+  const saldoFinal=saldoInicial+totalReceita-totalDespesas+totalAjustes;
+
+  // Agrupar despesas por descrição para ver onde está gastando mais
+  const grupoDespesas={};
+  despesasMes.forEach(d=>{
+    const key=d.descricao;
+    grupoDespesas[key]=(grupoDespesas[key]||0)+d.valor;
+  });
+  const topDespesas=Object.entries(grupoDespesas).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // Vendas por forma de pagamento
+  const porForma={};
+  vendasMes.forEach(v=>{porForma[v.forma_pgto]=(porForma[v.forma_pgto]||0)+v.total;});
+
+  const lucroLiquido=totalReceita-totalDespesas;
+  const margemLiquida=totalReceita>0?(lucroLiquido/totalReceita*100):0;
+
+  return <div style={{position:"fixed",inset:0,background:T.creme,zIndex:150,overflowY:"auto"}}>
+    {/* Header */}
+    <div style={{background:T.choco,padding:"16px 20px",position:"sticky",top:0,zIndex:10}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <h2 style={{fontFamily:"Georgia,serif",fontSize:18,color:T.rosaL,margin:0}}>📊 Relatório Mensal</h2>
+        <button onClick={onFechar} style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:9,padding:"7px 12px",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.8)",fontWeight:600}}>✕ Fechar</button>
+      </div>
+      {/* Navegação de meses */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"rgba(255,255,255,.1)",borderRadius:12,padding:"10px 14px"}}>
+        <button onClick={()=>navMes(-1)} style={{background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,.7)",fontSize:20,padding:"0 8px"}}>‹</button>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontFamily:"Georgia,serif",fontSize:16,color:"#fff",fontWeight:700}}>{MESES[mes]}</div>
+          <div style={{fontFamily:"system-ui",fontSize:12,color:"rgba(255,255,255,.5)"}}>{ano}</div>
+        </div>
+        <button onClick={()=>navMes(1)} style={{background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,.7)",fontSize:20,padding:"0 8px"}}>›</button>
+      </div>
+    </div>
+
+    <div style={{padding:"20px 16px",display:"flex",flexDirection:"column",gap:16}}>
+      {/* Saldo geral */}
+      <Card style={{background:T.choco}}>
+        <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,letterSpacing:.5,marginBottom:12}}>RESULTADO DO MÊS</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)"}}>Saldo inicial</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:16,color:"rgba(255,255,255,.8)",fontWeight:700}}>{brl(saldoInicial)}</div>
+          </div>
+          <div>
+            <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)"}}>Saldo final</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:16,color:saldoFinal>=0?"#7fe8b0":"#f99",fontWeight:700}}>{brl(saldoFinal)}</div>
+          </div>
+          <div>
+            <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)"}}>Total recebido</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:16,color:"#7fe8b0",fontWeight:700}}>{brl(totalReceita)}</div>
+          </div>
+          <div>
+            <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)"}}>Total despesas</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:16,color:"#f99",fontWeight:700}}>{brl(totalDespesas)}</div>
+          </div>
+        </div>
+        <div style={{borderTop:"1px solid rgba(255,255,255,.15)",paddingTop:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)",fontWeight:700}}>Lucro líquido</span>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontFamily:"Georgia,serif",fontSize:22,color:lucroLiquido>=0?"#7fe8b0":"#f99",fontWeight:700}}>{brl(lucroLiquido)}</div>
+            <div style={{fontFamily:"system-ui",fontSize:11,color:"rgba(255,255,255,.4)"}}>{margemLiquida.toFixed(1)}% da receita</div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Vendas por forma de pagamento */}
+      {Object.keys(porForma).length>0&&<Card>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoL,fontWeight:700,marginBottom:12,letterSpacing:.5}}>💳 RECEBIMENTOS POR FORMA</div>
+        {FORMAS_PGTO.map(f=>{
+          const val=porForma[f.id]||0;
+          if(!val) return null;
+          const pct2=totalReceita>0?(val/totalReceita*100):0;
+          return <div key={f.id} style={{marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontFamily:"system-ui",fontSize:13,color:T.choco}}>{f.emoji} {f.label}</span>
+              <span style={{fontFamily:"Georgia,serif",fontSize:13,color:T.verde,fontWeight:700}}>{brl(val)} <span style={{fontSize:11,color:T.chocoL}}>({pct2.toFixed(1)}%)</span></span>
+            </div>
+            <div style={{height:5,background:T.borda,borderRadius:99}}>
+              <div style={{width:`${pct2}%`,height:"100%",background:T.verde,borderRadius:99}}/>
+            </div>
+          </div>;
+        })}
+      </Card>}
+
+      {/* Top despesas */}
+      {topDespesas.length>0&&<Card>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoL,fontWeight:700,marginBottom:12,letterSpacing:.5}}>📤 PRINCIPAIS DESPESAS</div>
+        {topDespesas.map(([desc,val],idx)=>{
+          const pct2=totalDespesas>0?(val/totalDespesas*100):0;
+          return <div key={idx} style={{marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontFamily:"system-ui",fontSize:13,color:T.choco,flex:1,marginRight:8}} numberOfLines={1}>{desc}</span>
+              <span style={{fontFamily:"Georgia,serif",fontSize:13,color:T.vermelho,fontWeight:700}}>{brl(val)} <span style={{fontSize:11,color:T.chocoL}}>({pct2.toFixed(1)}%)</span></span>
+            </div>
+            <div style={{height:5,background:T.borda,borderRadius:99}}>
+              <div style={{width:`${pct2}%`,height:"100%",background:T.vermelho,borderRadius:99}}/>
+            </div>
+          </div>;
+        })}
+      </Card>}
+
+      {/* Resumo de vendas */}
+      <Card>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoL,fontWeight:700,marginBottom:12,letterSpacing:.5}}>🛍️ RESUMO DE VENDAS</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontFamily:"system-ui",fontSize:13,color:T.chocoM}}>Total de vendas</span>
+            <span style={{fontFamily:"Georgia,serif",fontSize:14,color:T.choco,fontWeight:700}}>{vendasMes.length} pedidos</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontFamily:"system-ui",fontSize:13,color:T.chocoM}}>Ticket médio</span>
+            <span style={{fontFamily:"Georgia,serif",fontSize:14,color:T.choco,fontWeight:700}}>{vendasMes.length>0?brl(totalReceita/vendasMes.length):brl(0)}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontFamily:"system-ui",fontSize:13,color:T.chocoM}}>Maior venda</span>
+            <span style={{fontFamily:"Georgia,serif",fontSize:14,color:T.choco,fontWeight:700}}>{vendasMes.length>0?brl(Math.max(...vendasMes.map(v=>v.total))):brl(0)}</span>
+          </div>
+          {totalAjustes!==0&&<div style={{display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontFamily:"system-ui",fontSize:13,color:T.chocoM}}>Ajustes de caixa</span>
+            <span style={{fontFamily:"Georgia,serif",fontSize:14,color:totalAjustes>=0?T.verde:T.vermelho,fontWeight:700}}>{brl(totalAjustes)}</span>
+          </div>}
+        </div>
+      </Card>
+
+      {vendasMes.length===0&&despesasMes.length===0&&<div style={{textAlign:"center",padding:"40px 0"}}>
+        <div style={{fontSize:40,marginBottom:12}}>📭</div>
+        <div style={{fontFamily:"system-ui",fontSize:14,color:T.chocoM}}>Nenhum registro em {MESES[mes]} {ano}</div>
+      </div>}
+    </div>
+  </div>;
+}
+
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 function Config({userId,config,onSalvar}){
   const [salario,setSalario]=useState(String(config?.salario_mensal||""));
@@ -1258,7 +1438,9 @@ export default function App(){
   const [fichas,setFichas]=useState([]);
   const [pedidos,setPedidos]=useState([]);
   const [saldoMensal,setSaldoMensal]=useState(null);
+  const [saldoMensalData,setSaldoMensalData]=useState([]);
   const [ajustes,setAjustes]=useState([]);
+  const [showRelatorio,setShowRelatorio]=useState(false);
   const [showSaldoModal,setShowSaldoModal]=useState(false);
 
   useEffect(()=>{
@@ -1285,6 +1467,7 @@ export default function App(){
       const mesAtual=now.getMonth()+1;
       const diaAtual=now.getDate();
       const {data:sm}=await supabase.from("saldo_mensal").select("*").eq("user_id",user.id).eq("ano",anoAtual).eq("mes",mesAtual).single();
+      const {data:smAll}=await supabase.from("saldo_mensal").select("*").eq("user_id",user.id);
       const {data:aj}=await supabase.from("ajustes_caixa").select("*").eq("user_id",user.id).order("data").order("hora");
       setProdutos(p.data||[]);
       setVendas(v.data||[]);
@@ -1293,6 +1476,7 @@ export default function App(){
       setConfig(c.data||null);
       setFichas(ft.data||[]);
       setSaldoMensal(sm||null);
+      setSaldoMensalData(smAll||[]);
       setAjustes(aj||[]);
       // Mostrar modal se dia 1 ou sem saldo cadastrado este mês
       if(!sm||(diaAtual===1&&sm.mes!==mesAtual)){
@@ -1304,7 +1488,7 @@ export default function App(){
 
   async function handleLogout(){
     await supabase.auth.signOut();
-    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);setSaldoMensal(null);setAjustes([]);
+    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);setSaldoMensal(null);setSaldoMensalData([]);setAjustes([]);setShowRelatorio(false);
   }
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.choco}}>
@@ -1327,12 +1511,13 @@ export default function App(){
   const saldoAtual=saldoInicialMes+totalVendasMes-totalDespMes+totalAjustesMes;
 
   return <div style={{maxWidth:430,margin:"0 auto",background:T.creme,minHeight:"100vh"}}>
+    {showRelatorio&&<RelatorioMensal vendas={vendas} despesas={despesas} ajustes={ajustes} saldoMensalData={saldoMensalData} onFechar={()=>setShowRelatorio(false)}/>}
     {showSaldoModal&&<SaldoModal userId={user.id} anoAtual={anoAtual2} mesAtual={mesAtual2}
       saldoAtual={saldoAtual} onSalvar={sm=>{setSaldoMensal(sm);setShowSaldoModal(false);}}
       onFechar={()=>setShowSaldoModal(false)}/>}
     <Nav tela={tela} setTela={setTela}/>
     <div style={{paddingBottom:40}}>
-      {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)}/>}
+      {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)} setShowRelatorio={setShowRelatorio}/>}
       {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes}
         onNovaVenda={v=>setVendas(p=>[...p,v])} onNovaDespesa={d=>setDespesas(p=>[...p,d])}
         onNovoAjuste={a=>setAjustes(p=>[...p,a])}/>}
