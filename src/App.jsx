@@ -1229,7 +1229,7 @@ function RelatorioMensal({vendas,despesas,ajustes,saldoMensalData,onFechar}){
   const lucroLiquido=totalReceita-totalDespesas;
   const margemLiquida=totalReceita>0?(lucroLiquido/totalReceita*100):0;
 
-  return <div style={{position:"fixed",inset:0,background:T.creme,zIndex:150,overflowY:"auto"}}>
+  return <div style={{position:"fixed",inset:0,background:T.creme,zIndex:500,overflowY:"auto"}}>
     {/* Header */}
     <div style={{background:T.choco,padding:"16px 20px",position:"sticky",top:0,zIndex:10}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
