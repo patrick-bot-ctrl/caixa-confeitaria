@@ -722,10 +722,27 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
   const [custOut,setCustOut]=useState("");
   const [obs,setObs]=useState("");
   const [ingredientes,setIngredientes]=useState([]);
+  const [subReceitas,setSubReceitas]=useState([]);
   const [loading,setLoading]=useState(false);
 
   const valorMin=config?(config.salario_mensal/config.horas_mes/60):0;
   const custosFixosMes=config?.custos_fixos_mes||0;
+
+  function novaSubReceita(){
+    setSubReceitas(prev=>[...prev,{id:Date.now(),sub_ficha_id:"",quantidade:"1",unidade:"un"}]);
+  }
+  function atualizaSub(id,campo,val){
+    setSubReceitas(prev=>prev.map(s=>s.id===id?{...s,[campo]:val}:s));
+  }
+  function removeSub(id){setSubReceitas(prev=>prev.filter(s=>s.id!==id));}
+
+  function custoSubReceita(sub){
+    if(!sub.sub_ficha_id) return 0;
+    const f=fichas.find(x=>x.id===sub.sub_ficha_id);
+    if(!f) return 0;
+    const dre=calcDRE(f);
+    return dre.custoPorUnidade*parseFloat(sub.quantidade||1);
+  }
 
   function novoIngrediente(){
     setIngredientes(prev=>[...prev,{id:Date.now(),insumo_id:"",nome_manual:"",quantidade:"",unidade:"g"}]);
@@ -746,15 +763,17 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
   }
 
   const totalIngredientes=ingredientes.reduce((s,i)=>s+custoIngrediente(i),0);
+  const totalSubReceitas=subReceitas.reduce((s,sr)=>s+custoSubReceita(sr),0);
   const custoMaoObra=valorMin*parseFloat(tempo||0);
   const custoEmbalagem=parseFloat(custEmb||0);
   const custoRotulo=parseFloat(custRot||0);
   const custoOutros=parseFloat(custOut||0);
-  const custoTotal=totalIngredientes+custoMaoObra+custoEmbalagem+custoRotulo+custoOutros;
+  const custoTotal=totalIngredientes+totalSubReceitas+custoMaoObra+custoEmbalagem+custoRotulo+custoOutros;
   const unidades=parseInt(rendUnid||1);
   const custoPorUnidade=unidades>0?custoTotal/unidades:0;
 
-  function calcDRE(ficha){
+  function calcDRE(ficha,depth=0){
+    if(depth>3) return {totIngr:0,totSub:0,mo:0,emb:0,total:0,custoPorUnidade:0};
     const vm=config?(config.salario_mensal/config.horas_mes/60):0;
     const ingrs=ficha.ficha_ingredientes||[];
     const totIngr=ingrs.reduce((s,i)=>{
@@ -762,11 +781,18 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
       if(!ins) return s;
       return s+(ins.preco_embalagem/ins.qtd_embalagem)*i.quantidade;
     },0);
+    const subs=ficha.ficha_subreceitas||[];
+    const totSub=subs.reduce((s,sr)=>{
+      const sf=fichas.find(x=>x.id===sr.sub_ficha_id);
+      if(!sf) return s;
+      const dreSub=calcDRE(sf,depth+1);
+      return s+dreSub.custoPorUnidade*parseFloat(sr.quantidade||1);
+    },0);
     const mo=vm*(ficha.tempo_preparo_min||0);
     const emb=(ficha.custo_embalagem||0)+(ficha.custo_rotulo||0)+(ficha.custo_outros||0);
-    const total=totIngr+mo+emb;
+    const total=totIngr+totSub+mo+emb;
     const u=ficha.rendimento_unidades||1;
-    return {totIngr,mo,emb,total,custoPorUnidade:total/u};
+    return {totIngr,totSub,mo,emb,total,custoPorUnidade:total/u};
   }
 
   async function salvar(){
@@ -784,14 +810,19 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
       const {data}=await supabase.from("fichas_tecnicas").insert(payload).select().single();
       fichaId=data?.id;
     }
-    if(fichaId&&ingredientes.length>0){
-      const rows=ingredientes.filter(i=>i.insumo_id&&i.quantidade).map(i=>({
+    if(fichaId){
+      await supabase.from("ficha_subreceitas").delete().eq("ficha_id",fichaId);
+      const rowsIngr=ingredientes.filter(i=>i.insumo_id&&i.quantidade).map(i=>({
         ficha_id:fichaId,insumo_id:i.insumo_id,quantidade:parseFloat(i.quantidade),unidade:i.unidade
       }));
-      if(rows.length>0) await supabase.from("ficha_ingredientes").insert(rows);
+      if(rowsIngr.length>0) await supabase.from("ficha_ingredientes").insert(rowsIngr);
+      const rowsSub=subReceitas.filter(s=>s.sub_ficha_id&&s.quantidade).map(s=>({
+        ficha_id:fichaId,sub_ficha_id:s.sub_ficha_id,quantidade:parseFloat(s.quantidade),unidade:s.unidade
+      }));
+      if(rowsSub.length>0) await supabase.from("ficha_subreceitas").insert(rowsSub);
     }
     const {data:updated}=await supabase.from("fichas_tecnicas")
-      .select("*,ficha_ingredientes(*)").eq("id",fichaId).single();
+      .select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("id",fichaId).single();
     setLoading(false);
     if(updated){onSalvar(updated,!!fichaAtual);limpar();}
   }
@@ -799,7 +830,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
   function limpar(){
     setNome("");setRendUnid("1");setRendPeso("");setUnidPeso("g");
     setTempo("");setCustEmb("");setCustRot("");setCustOut("");setObs("");
-    setIngredientes([]);setFichaAtual(null);setTela("lista");
+    setIngredientes([]);setSubReceitas([]);setFichaAtual(null);setTela("lista");
   }
 
   function editarFicha(f){
@@ -809,6 +840,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
     setCustRot(String(f.custo_rotulo||""));setCustOut(String(f.custo_outros||""));
     setObs(f.observacoes||"");
     setIngredientes((f.ficha_ingredientes||[]).map(i=>({...i,id:i.id})));
+    setSubReceitas((f.ficha_subreceitas||[]).map(s=>({...s,id:s.id})));
     setTela("form");
   }
 
@@ -853,9 +885,10 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
     const dre=calcDRE(fichaAtual);
     const itens=[
       {label:"🧂 Ingredientes",valor:dre.totIngr,cor:T.azul},
+      {label:"🔗 Sub-receitas",valor:dre.totSub||0,cor:T.verde},
       {label:"📦 Embalagem + Rótulo",valor:dre.emb,cor:T.roxo},
       {label:"👩‍🍳 Mão de obra",valor:dre.mo,cor:T.amarelo},
-    ];
+    ].filter(it=>it.valor>0);
     return <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <button onClick={()=>setTela("lista")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:T.chocoM,textAlign:"left",padding:0}}>← Voltar</button>
       <Card style={{background:T.choco}}>
@@ -900,6 +933,19 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
           </div>;
         })}
       </Card>
+
+      {(fichaAtual.ficha_subreceitas||[]).length>0&&<Card>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoL,fontWeight:700,marginBottom:12,letterSpacing:.5}}>🔗 SUB-RECEITAS</div>
+        {(fichaAtual.ficha_subreceitas||[]).map(sr=>{
+          const sf=fichas.find(x=>x.id===sr.sub_ficha_id);
+          const dreSub=sf?calcDRE(sf):{custoPorUnidade:0};
+          const custo=dreSub.custoPorUnidade*parseFloat(sr.quantidade||1);
+          return <div key={sr.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${T.borda}`}}>
+            <span style={{fontFamily:"system-ui",fontSize:13,color:T.choco}}>{sf?.nome||"Receita"} — {sr.quantidade}{sr.unidade}</span>
+            <span style={{fontFamily:"Georgia,serif",fontSize:13,color:T.verde,fontWeight:700}}>{brl(custo)}</span>
+          </div>;
+        })}
+      </Card>}
 
       <Card style={{background:T.amareloL,border:`1.5px solid #f0d080`}}>
         <div style={{fontFamily:"system-ui",fontSize:11,color:T.amarelo,fontWeight:700,marginBottom:8}}>💡 SUGESTÃO DE PREÇO</div>
@@ -954,6 +1000,32 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
     </Card>
 
     <Card>
+      <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>🔗 SUB-RECEITAS</div>
+      <p style={{fontFamily:"system-ui",fontSize:12,color:T.chocoL,margin:"0 0 12px",lineHeight:1.5}}>
+        Use outra ficha técnica como ingrediente. Ex: Mousse de Ninho dentro do Copo Duplo.
+      </p>
+      {subReceitas.map(sr=>{
+        const sf=fichas.find(x=>x.id===sr.sub_ficha_id);
+        const dreS=sf?calcDRE(sf):{custoPorUnidade:0};
+        const custoS=dreS.custoPorUnidade*parseFloat(sr.quantidade||1);
+        return <div key={sr.id} style={{marginBottom:12,padding:"10px 12px",background:T.verdeL,borderRadius:10,border:`1px solid #b5d9c5`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontFamily:"system-ui",fontSize:12,color:T.verde,fontWeight:700}}>🔗 Sub-receita</span>
+            <button onClick={()=>removeSub(sr.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.vermelho,fontSize:16}}>✕</button>
+          </div>
+          <Select label="" value={sr.sub_ficha_id} onChange={v=>atualizaSub(sr.id,"sub_ficha_id",v)}
+            options={[{value:"",label:"Selecione a receita..."},...fichas.filter(f=>f.id!==fichaAtual?.id).map(f=>({value:f.id,label:f.nome}))]}/>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8,marginTop:8}}>
+            <Input label="Quantidade" type="number" value={sr.quantidade} onChange={v=>atualizaSub(sr.id,"quantidade",v)} placeholder="1"/>
+            <Select label="Un." value={sr.unidade} onChange={v=>atualizaSub(sr.id,"unidade",v)} options={["un","g","kg","ml","L"].map(u=>({value:u,label:u}))}/>
+          </div>
+          {custoS>0&&<div style={{fontFamily:"system-ui",fontSize:11,color:T.verde,fontWeight:600,marginTop:6}}>Custo: {brl(custoS)}</div>}
+        </div>;
+      })}
+      <Btn variant="verde" onClick={novaSubReceita} style={{width:"100%",fontSize:12}}>🔗 Adicionar sub-receita</Btn>
+    </Card>
+
+    <Card>
       <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>📦 CUSTOS ADICIONAIS</div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         <Input label="Embalagem (R$)" type="number" value={custEmb} onChange={setCustEmb} placeholder="0,00"/>
@@ -969,6 +1041,10 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
         <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Ingredientes</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(totalIngredientes)}</span>
       </div>
+      {totalSubReceitas>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Sub-receitas</span>
+        <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(totalSubReceitas)}</span>
+      </div>}
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
         <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Mão de obra ({tempo||0}min)</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoMaoObra)}</span>
@@ -1116,7 +1192,7 @@ export default function App(){
         supabase.from("despesas").select("*").eq("user_id",user.id).order("data").order("hora"),
         supabase.from("insumos").select("*").eq("user_id",user.id).order("nome"),
         supabase.from("config_confeitaria").select("*").eq("user_id",user.id).single(),
-        supabase.from("fichas_tecnicas").select("*,ficha_ingredientes(*)").eq("user_id",user.id).order("created_at"),
+        supabase.from("fichas_tecnicas").select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("user_id",user.id).order("created_at"),
       ]);
       const now=new Date();
       const anoAtual=now.getFullYear();
