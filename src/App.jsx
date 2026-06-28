@@ -191,6 +191,7 @@ function Nav({tela,setTela}){
     {id:"dashboard",icon:"🏠",label:"Início"},
     {id:"caixa",icon:"💰",label:"Caixa"},
     {id:"precificacao",icon:"🎂",label:"Preços"},
+    {id:"relatorio",icon:"📊",label:"Relatório"},
     {id:"config",icon:"⚙️",label:"Config"},
   ];
   return <nav style={{display:"flex",justifyContent:"space-around",background:T.choco,padding:"10px 0 8px",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 8px rgba(0,0,0,.25)"}}>
@@ -1229,12 +1230,12 @@ function RelatorioMensal({vendas,despesas,ajustes,saldoMensalData,onFechar}){
   const lucroLiquido=totalReceita-totalDespesas;
   const margemLiquida=totalReceita>0?(lucroLiquido/totalReceita*100):0;
 
-  return <div style={{position:"fixed",inset:0,background:T.creme,zIndex:500,overflowY:"auto"}}>
+  return <div style={{background:T.creme,minHeight:"100vh"}}>
     {/* Header */}
     <div style={{background:T.choco,padding:"16px 20px",position:"sticky",top:0,zIndex:10}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
         <h2 style={{fontFamily:"Georgia,serif",fontSize:18,color:T.rosaL,margin:0}}>📊 Relatório Mensal</h2>
-        <button onClick={onFechar} style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:9,padding:"7px 12px",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.8)",fontWeight:600}}>✕ Fechar</button>
+        <button onClick={onFechar} style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:9,padding:"7px 12px",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.8)",fontWeight:600}}>← Voltar</button>
       </div>
       {/* Navegação de meses */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"rgba(255,255,255,.1)",borderRadius:12,padding:"10px 14px"}}>
@@ -1440,7 +1441,6 @@ export default function App(){
   const [saldoMensal,setSaldoMensal]=useState(null);
   const [saldoMensalData,setSaldoMensalData]=useState([]);
   const [ajustes,setAjustes]=useState([]);
-  const [showRelatorio,setShowRelatorio]=useState(false);
   const [showSaldoModal,setShowSaldoModal]=useState(false);
 
   useEffect(()=>{
@@ -1488,7 +1488,7 @@ export default function App(){
 
   async function handleLogout(){
     await supabase.auth.signOut();
-    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);setSaldoMensal(null);setSaldoMensalData([]);setAjustes([]);setShowRelatorio(false);
+    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);setSaldoMensal(null);setSaldoMensalData([]);setAjustes([]);
   }
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.choco}}>
@@ -1515,9 +1515,8 @@ export default function App(){
       saldoAtual={saldoAtual} onSalvar={sm=>{setSaldoMensal(sm);setShowSaldoModal(false);}}
       onFechar={()=>setShowSaldoModal(false)}/>}
     <Nav tela={tela} setTela={setTela}/>
-    {showRelatorio&&<RelatorioMensal vendas={vendas} despesas={despesas} ajustes={ajustes} saldoMensalData={saldoMensalData} onFechar={()=>setShowRelatorio(false)}/>}
     <div style={{paddingBottom:40}}>
-      {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)} setShowRelatorio={setShowRelatorio}/>}
+      {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)} setShowRelatorio={(v)=>setTela(v?"relatorio":"dashboard")}/>}
       {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes}
         onNovaVenda={v=>setVendas(p=>[...p,v])} onNovaDespesa={d=>setDespesas(p=>[...p,d])}
         onNovoAjuste={a=>setAjustes(p=>[...p,a])}/>}
@@ -1529,6 +1528,7 @@ export default function App(){
         onSalvarFicha={(f,e)=>setFichas(prev=>e?prev.map(x=>x.id===f.id?f:x):[...prev,f])}
         onExcluirFicha={id=>setFichas(p=>p.filter(x=>x.id!==id))}/>}
       {tela==="config"&&<Config userId={user.id} config={config} onSalvar={c=>setConfig(c)}/>}
+      {tela==="relatorio"&&<RelatorioMensal vendas={vendas} despesas={despesas} ajustes={ajustes} saldoMensalData={saldoMensalData} onFechar={()=>setTela("dashboard")}/>}
     </div>
   </div>;
 }
