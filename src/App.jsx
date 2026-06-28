@@ -1511,11 +1511,11 @@ export default function App(){
   const saldoAtual=saldoInicialMes+totalVendasMes-totalDespMes+totalAjustesMes;
 
   return <div style={{maxWidth:430,margin:"0 auto",background:T.creme,minHeight:"100vh"}}>
-    {showRelatorio&&<RelatorioMensal vendas={vendas} despesas={despesas} ajustes={ajustes} saldoMensalData={saldoMensalData} onFechar={()=>setShowRelatorio(false)}/>}
     {showSaldoModal&&<SaldoModal userId={user.id} anoAtual={anoAtual2} mesAtual={mesAtual2}
       saldoAtual={saldoAtual} onSalvar={sm=>{setSaldoMensal(sm);setShowSaldoModal(false);}}
       onFechar={()=>setShowSaldoModal(false)}/>}
     <Nav tela={tela} setTela={setTela}/>
+    {showRelatorio&&<RelatorioMensal vendas={vendas} despesas={despesas} ajustes={ajustes} saldoMensalData={saldoMensalData} onFechar={()=>setShowRelatorio(false)}/>}
     <div style={{paddingBottom:40}}>
       {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)} setShowRelatorio={setShowRelatorio}/>}
       {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes}
