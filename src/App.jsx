@@ -398,13 +398,60 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
     <h2 style={{fontFamily:"Georgia,serif",fontSize:20,color:T.choco,margin:0}}>💰 Caixa</h2>
     <SubAba abas={[{id:"venda",emoji:"🛍️",label:"Venda"},{id:"despesa",emoji:"📤",label:"Despesa"},{id:"ajuste",emoji:"⚖️",label:"Ajuste"},{id:"historico",emoji:"📋",label:"Hoje"}]} ativa={aba} onChange={setAba}/>
 
-    {aba==="venda"&&<Card>
-      <div style={{display:"flex",flexDirection:"column",gap:13}}>
-        <Select label="Produto" value={produtoId} onChange={setProdutoId}
-          options={[{value:"",label:"Selecione..."},{...produtos.map(p=>({value:p.id,label:`${p.nome} · ${brl(precoFinal(p))}`}))},...produtos.map(p=>({value:p.id,label:`${p.nome} · ${brl(precoFinal(p))}`}))].filter((o,i,a)=>a.findIndex(x=>x.value===o.value)===i)}/>
-        <Input label="Quantidade" type="number" value={qtd} onChange={setQtd} placeholder="1"/>
-
-        <div>
+    {aba==="venda"&&<div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Card>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>➕ ADICIONAR ITEM</div>
+        <div style={{display:"flex",flexDirection:"column",gap:11}}>
+          <Select label="Produto" value={produtoId} onChange={v=>{setProdutoId(v);setAdicionais([]);}}
+            options={[{value:"",label:"Selecione..."},...produtos.map(p=>({value:p.id,label:`${p.nome} · ${brl(precoFinal(p))}`}))]}/>
+          <Input label="Quantidade" type="number" value={qtd} onChange={setQtd} placeholder="1"/>
+          {prodSel&&<div>
+            <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:8}}>ADICIONAIS (opcional)</div>
+            {adicionais.map(a=><div key={a.id} style={{marginBottom:10,padding:"10px 12px",background:T.amareloL,borderRadius:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                <span style={{fontFamily:"system-ui",fontSize:12,color:T.amarelo,fontWeight:700}}>Adicional</span>
+                <button onClick={()=>removeAdicional(a.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.vermelho,fontSize:16}}>✕</button>
+              </div>
+              <Input label="Nome" value={a.nome} onChange={v=>atualizaAdicional(a.id,"nome",v)} placeholder="Ex: Cobertura de brigadeiro"/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:8}}>
+                <Input label="Qtd" type="number" value={a.qtd} onChange={v=>atualizaAdicional(a.id,"qtd",v)} placeholder="1"/>
+                <Select label="Un." value={a.unidade} onChange={v=>atualizaAdicional(a.id,"unidade",v)} options={["un","g","kg","ml","L"].map(u=>({value:u,label:u}))}/>
+                <Input label="Preço R$" type="number" value={a.preco} onChange={v=>atualizaAdicional(a.id,"preco",v)} placeholder="0,00"/>
+              </div>
+            </div>)}
+            <Btn variant="ghost" onClick={novoAdicional} style={{width:"100%",fontSize:11,padding:"7px 0"}}>+ Adicionar cobertura/extra</Btn>
+          </div>}
+          {prodSel&&<div style={{background:T.rosaL,borderRadius:10,padding:"10px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <span style={{fontFamily:"system-ui",fontSize:12,color:T.chocoM}}>{qtd}x {prodSel.nome}</span>
+              <span style={{fontFamily:"Georgia,serif",fontSize:14,color:T.rosa,fontWeight:700}}>{brl(subtotalItem)}</span>
+            </div>
+          </div>}
+          <Btn variant="secondary" onClick={adicionarAoCarrinho} disabled={!produtoId}>🛒 Adicionar ao carrinho</Btn>
+        </div>
+      </Card>
+      {carrinho.length>0&&<Card>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>🛒 CARRINHO ({carrinho.length} {carrinho.length===1?"item":"itens"})</div>
+        {carrinho.map(item=><div key={item.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.borda}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:"system-ui",fontSize:13,color:T.choco,fontWeight:600}}>{item.qtd}x {item.nome}</div>
+              {item.adicionais.map((a,i)=><div key={i} style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,marginTop:2}}>
+                + {a.qtd}{a.unidade} {a.nome} — {brl(parseFloat(a.preco||0)*parseFloat(a.qtd||1))}
+              </div>)}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontFamily:"Georgia,serif",fontSize:14,color:T.verde,fontWeight:700}}>{brl(item.subtotal)}</span>
+              <button onClick={()=>removerDoCarrinho(item.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.vermelho,fontSize:16}}>✕</button>
+            </div>
+          </div>
+        </div>)}
+        <div style={{marginTop:12,paddingTop:10,borderTop:`2px solid ${T.borda}`,display:"flex",justifyContent:"space-between",marginBottom:14}}>
+          <span style={{fontFamily:"system-ui",fontSize:14,color:T.choco,fontWeight:700}}>Total do pedido</span>
+          <span style={{fontFamily:"Georgia,serif",fontSize:20,color:T.rosa,fontWeight:700}}>{brl(totalCarrinho)}</span>
+        </div>
+        <Input label="Observação (opcional)" value={obsVenda} onChange={setObsVenda} placeholder="Ex: sem açúcar, entrega às 18h..."/>
+        <div style={{marginTop:12}}>
           <div style={{fontFamily:"system-ui",fontSize:12,color:T.chocoM,fontWeight:600,marginBottom:8}}>Forma de recebimento</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             {FORMAS_PGTO.map(f=><button key={f.id} onClick={()=>setFormaPgto(f.id)}
@@ -414,15 +461,9 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
             </button>)}
           </div>
         </div>
-
-        {prodSel&&<div style={{background:T.rosaL,borderRadius:10,padding:"12px 14px"}}>
-          <div style={{fontFamily:"system-ui",fontSize:10,color:T.chocoM,fontWeight:700}}>TOTAL A RECEBER</div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:24,color:T.rosa,fontWeight:700}}>{brl(totalV)}</div>
-          <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,marginTop:2}}>{qtd}x {brl(precoFinal(prodSel))} · margem real {prodSel.margem}%</div>
-        </div>}
-        <Btn loading={loading} onClick={registrarVenda} disabled={!produtoId}>✓ Confirmar Venda</Btn>
-      </div>
-    </Card>}
+        <Btn loading={loading} onClick={confirmarPedido} style={{marginTop:12,width:"100%"}}>✓ Confirmar Pedido — {brl(totalCarrinho)}</Btn>
+      </Card>}
+    </div>}
 
     {aba==="despesa"&&<Card>
       <div style={{display:"flex",flexDirection:"column",gap:13}}>
