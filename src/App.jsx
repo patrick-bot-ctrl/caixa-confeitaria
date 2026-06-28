@@ -302,9 +302,6 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
   const [valorAjuste,setValorAjuste]=useState("");
   const [tipoAjuste,setTipoAjuste]=useState("entrada");
   const [loadingAjuste,setLoadingAjuste]=useState(false);
-  const [produtoId,setProdutoId]=useState("");
-  const [qtd,setQtd]=useState("1");
-  const [formaPgto,setFormaPgto]=useState("pix");
   const [descricao,setDescricao]=useState("");
   const [valor,setValor]=useState("");
   const [formaPgtoD,setFormaPgtoD]=useState("pix");
@@ -312,20 +309,67 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
   const [loading,setLoading]=useState(false);
   const [modalFoto,setModalFoto]=useState(null);
 
+  // ── CARRINHO ──
+  const [carrinho,setCarrinho]=useState([]);
+  const [produtoId,setProdutoId]=useState("");
+  const [qtd,setQtd]=useState("1");
+  const [adicionais,setAdicionais]=useState([]);
+  const [formaPgto,setFormaPgto]=useState("pix");
+  const [obsVenda,setObsVenda]=useState("");
+
   const prodSel=produtos.find(p=>p.id===produtoId);
-  const totalV=prodSel?precoFinal(prodSel)*parseInt(qtd||1):0;
+  const precoItemSel=prodSel?precoFinal(prodSel):0;
+  const totalAdicionais=adicionais.reduce((s,a)=>s+parseFloat(a.preco||0)*parseFloat(a.qtd||1),0);
+  const subtotalItem=prodSel?(precoItemSel*parseInt(qtd||1))+totalAdicionais:0;
+  const totalCarrinho=carrinho.reduce((s,i)=>s+i.subtotal,0);
   const totalVendasHoje=vendas.filter(v=>v.data===hoje()).reduce((s,v)=>s+v.total,0);
   const totalDespHoje=despesas.filter(d=>d.data===hoje()).reduce((s,d)=>s+d.valor,0);
 
-  async function registrarVenda(){
-    if(!produtoId||!qtd) return;
+  function adicionarAoCarrinho(){
+    if(!prodSel) return;
+    const item={
+      id:Date.now(),produto_id:produtoId,nome:prodSel.nome,
+      preco_unitario:precoItemSel,qtd:parseInt(qtd||1),
+      adicionais:[...adicionais],subtotal:subtotalItem
+    };
+    setCarrinho(prev=>[...prev,item]);
+    setProdutoId("");setQtd("1");setAdicionais([]);
+  }
+
+  function removerDoCarrinho(id){setCarrinho(prev=>prev.filter(i=>i.id!==id));}
+
+  function novoAdicional(){setAdicionais(prev=>[...prev,{id:Date.now(),nome:"",preco:"",qtd:"1",unidade:"un"}]);}
+  function atualizaAdicional(id,campo,val){setAdicionais(prev=>prev.map(a=>a.id===id?{...a,[campo]:val}:a));}
+  function removeAdicional(id){setAdicionais(prev=>prev.filter(a=>a.id!==id));}
+
+  async function confirmarPedido(){
+    if(carrinho.length===0) return;
     setLoading(true);
-    const {data,error}=await supabase.from("vendas").insert({
-      user_id:userId,produto_id:produtoId,qtd:parseInt(qtd),
-      total:parseFloat(totalV.toFixed(2)),data:hoje(),hora:horaAgora(),forma_pgto:formaPgto
+    const total=totalCarrinho;
+    const {data:pedido,error}=await supabase.from("pedidos").insert({
+      user_id:userId,total:parseFloat(total.toFixed(2)),
+      forma_pgto:formaPgto,data:hoje(),hora:horaAgora(),observacao:obsVenda
     }).select().single();
+    if(!error&&pedido){
+      for(const item of carrinho){
+        const {data:pi}=await supabase.from("pedido_itens").insert({
+          pedido_id:pedido.id,produto_id:item.produto_id,nome_produto:item.nome,
+          preco_unitario:item.preco_unitario,qtd:item.qtd,subtotal:item.subtotal
+        }).select().single();
+        if(pi&&item.adicionais.length>0){
+          await supabase.from("pedido_item_adicionais").insert(
+            item.adicionais.map(a=>({item_id:pi.id,nome:a.nome,quantidade:parseFloat(a.qtd||1),unidade:a.unidade,preco:parseFloat(a.preco||0)}))
+          );
+        }
+      }
+      // também registra na tabela vendas para compatibilidade com dashboard
+      const vendaData={user_id:userId,produto_id:carrinho[0].produto_id,qtd:carrinho.reduce((s,i)=>s+i.qtd,0),
+        total:parseFloat(total.toFixed(2)),data:hoje(),hora:horaAgora(),forma_pgto:formaPgto,pedido_id:pedido.id};
+      const {data:v}=await supabase.from("vendas").insert(vendaData).select().single();
+      if(v) onNovaVenda({...v,_pedido:pedido,_itens:carrinho});
+      setCarrinho([]);setFormaPgto("pix");setObsVenda("");
+    }
     setLoading(false);
-    if(!error){onNovaVenda(data);setProdutoId("");setQtd("1");setFormaPgto("pix");}
   }
 
   async function registrarDespesa(){
@@ -1171,6 +1215,7 @@ export default function App(){
   const [insumos,setInsumos]=useState([]);
   const [config,setConfig]=useState(null);
   const [fichas,setFichas]=useState([]);
+  const [pedidos,setPedidos]=useState([]);
   const [saldoMensal,setSaldoMensal]=useState(null);
   const [ajustes,setAjustes]=useState([]);
   const [showSaldoModal,setShowSaldoModal]=useState(false);
