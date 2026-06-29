@@ -205,7 +205,7 @@ function Nav({tela,setTela}){
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtual,totalVendasMes,totalDespMes,totalAjustesMes,setTela,onLogout,onAbrirSaldo}){
+function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtual,totalVendasMes,totalDespMes,totalAjustesMes,setTela,onLogout,onAbrirSaldo,setShowRelatorio}){
   const nome=user?.user_metadata?.nome_confeitaria||"Confeitaria";
   const vendasHoje=vendas.filter(v=>v.data===hoje()).reduce((s,v)=>s+v.total,0);
 
@@ -274,10 +274,9 @@ function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtua
       <div style={{fontFamily:"Georgia,serif",fontSize:14,color:T.choco}}>{maisVendido}</div>
     </Card>}
 
-
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
       <Btn variant="primary" onClick={()=>setTela("caixa")}>💰 Nova Venda</Btn>
-      <Btn variant="ghost" onClick={()=>setTela("precificacao")}>🎂 Precificação</Btn>
+      <Btn variant="ghost" onClick={()=>setTela("relatorio")}>📊 Relatório</Btn>
     </div>
 
     <Secao titulo="ÚLTIMAS VENDAS">
@@ -310,8 +309,6 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
   const [fotoCupom,setFotoCupom]=useState(null);
   const [loading,setLoading]=useState(false);
   const [modalFoto,setModalFoto]=useState(null);
-
-  // ── CARRINHO ──
   const [carrinho,setCarrinho]=useState([]);
   const [produtoId,setProdutoId]=useState("");
   const [qtd,setQtd]=useState("1");
@@ -329,17 +326,10 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
 
   function adicionarAoCarrinho(){
     if(!prodSel) return;
-    const item={
-      id:Date.now(),produto_id:produtoId,nome:prodSel.nome,
-      preco_unitario:precoItemSel,qtd:parseInt(qtd||1),
-      adicionais:[...adicionais],subtotal:subtotalItem
-    };
-    setCarrinho(prev=>[...prev,item]);
+    setCarrinho(prev=>[...prev,{id:Date.now(),produto_id:produtoId,nome:prodSel.nome,preco_unitario:precoItemSel,qtd:parseInt(qtd||1),adicionais:[...adicionais],subtotal:subtotalItem}]);
     setProdutoId("");setQtd("1");setAdicionais([]);
   }
-
   function removerDoCarrinho(id){setCarrinho(prev=>prev.filter(i=>i.id!==id));}
-
   function novoAdicional(){setAdicionais(prev=>[...prev,{id:Date.now(),nome:"",preco:"",qtd:"1",unidade:"un"}]);}
   function atualizaAdicional(id,campo,val){setAdicionais(prev=>prev.map(a=>a.id===id?{...a,[campo]:val}:a));}
   function removeAdicional(id){setAdicionais(prev=>prev.filter(a=>a.id!==id));}
@@ -347,10 +337,8 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
   async function confirmarPedido(){
     if(carrinho.length===0) return;
     setLoading(true);
-    const total=totalCarrinho;
     const {data:pedido,error}=await supabase.from("pedidos").insert({
-      user_id:userId,total:parseFloat(total.toFixed(2)),
-      forma_pgto:formaPgto,data:hoje(),hora:horaAgora(),observacao:obsVenda
+      user_id:userId,total:parseFloat(totalCarrinho.toFixed(2)),forma_pgto:formaPgto,data:hoje(),hora:horaAgora(),observacao:obsVenda
     }).select().single();
     if(!error&&pedido){
       for(const item of carrinho){
@@ -364,11 +352,10 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
           );
         }
       }
-      // também registra na tabela vendas para compatibilidade com dashboard
-      const vendaData={user_id:userId,produto_id:carrinho[0].produto_id,qtd:carrinho.reduce((s,i)=>s+i.qtd,0),
-        total:parseFloat(total.toFixed(2)),data:hoje(),hora:horaAgora(),forma_pgto:formaPgto,pedido_id:pedido.id};
-      const {data:v}=await supabase.from("vendas").insert(vendaData).select().single();
-      if(v) onNovaVenda({...v,_pedido:pedido,_itens:carrinho});
+      const {data:v}=await supabase.from("vendas").insert({user_id:userId,produto_id:carrinho[0].produto_id,
+        qtd:carrinho.reduce((s,i)=>s+i.qtd,0),total:parseFloat(totalCarrinho.toFixed(2)),
+        data:hoje(),hora:horaAgora(),forma_pgto:formaPgto,pedido_id:pedido.id}).select().single();
+      if(v) onNovaVenda(v);
       setCarrinho([]);setFormaPgto("pix");setObsVenda("");
     }
     setLoading(false);
@@ -414,14 +401,14 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
                 <span style={{fontFamily:"system-ui",fontSize:12,color:T.amarelo,fontWeight:700}}>Adicional</span>
                 <button onClick={()=>removeAdicional(a.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.vermelho,fontSize:16}}>✕</button>
               </div>
-              <Input label="Nome" value={a.nome} onChange={v=>atualizaAdicional(a.id,"nome",v)} placeholder="Ex: Cobertura de brigadeiro"/>
+              <Input label="Nome" value={a.nome} onChange={v=>atualizaAdicional(a.id,"nome",v)} placeholder="Ex: Cobertura"/>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:8}}>
                 <Input label="Qtd" type="number" value={a.qtd} onChange={v=>atualizaAdicional(a.id,"qtd",v)} placeholder="1"/>
                 <Select label="Un." value={a.unidade} onChange={v=>atualizaAdicional(a.id,"unidade",v)} options={["un","g","kg","ml","L"].map(u=>({value:u,label:u}))}/>
                 <Input label="Preço R$" type="number" value={a.preco} onChange={v=>atualizaAdicional(a.id,"preco",v)} placeholder="0,00"/>
               </div>
             </div>)}
-            <Btn variant="ghost" onClick={novoAdicional} style={{width:"100%",fontSize:11,padding:"7px 0"}}>+ Adicionar cobertura/extra</Btn>
+            <Btn variant="ghost" onClick={novoAdicional} style={{width:"100%",fontSize:11,padding:"7px 0"}}>+ Adicionar extra</Btn>
           </div>}
           {prodSel&&<div style={{background:T.rosaL,borderRadius:10,padding:"10px 14px"}}>
             <div style={{display:"flex",justifyContent:"space-between"}}>
@@ -438,9 +425,7 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <div style={{flex:1}}>
               <div style={{fontFamily:"system-ui",fontSize:13,color:T.choco,fontWeight:600}}>{item.qtd}x {item.nome}</div>
-              {item.adicionais.map((a,i)=><div key={i} style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,marginTop:2}}>
-                + {a.qtd}{a.unidade} {a.nome} — {brl(parseFloat(a.preco||0)*parseFloat(a.qtd||1))}
-              </div>)}
+              {item.adicionais.map((a,i)=><div key={i} style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,marginTop:2}}>+ {a.qtd}{a.unidade} {a.nome}</div>)}
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontFamily:"Georgia,serif",fontSize:14,color:T.verde,fontWeight:700}}>{brl(item.subtotal)}</span>
@@ -449,10 +434,10 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
           </div>
         </div>)}
         <div style={{marginTop:12,paddingTop:10,borderTop:`2px solid ${T.borda}`,display:"flex",justifyContent:"space-between",marginBottom:14}}>
-          <span style={{fontFamily:"system-ui",fontSize:14,color:T.choco,fontWeight:700}}>Total do pedido</span>
+          <span style={{fontFamily:"system-ui",fontSize:14,color:T.choco,fontWeight:700}}>Total</span>
           <span style={{fontFamily:"Georgia,serif",fontSize:20,color:T.rosa,fontWeight:700}}>{brl(totalCarrinho)}</span>
         </div>
-        <Input label="Observação (opcional)" value={obsVenda} onChange={setObsVenda} placeholder="Ex: sem açúcar, entrega às 18h..."/>
+        <Input label="Observação (opcional)" value={obsVenda} onChange={setObsVenda} placeholder="Ex: sem açúcar..."/>
         <div style={{marginTop:12}}>
           <div style={{fontFamily:"system-ui",fontSize:12,color:T.chocoM,fontWeight:600,marginBottom:8}}>Forma de recebimento</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -486,9 +471,7 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
           <label style={{display:"flex",alignItems:"center",gap:10,background:fotoCupom?T.verdeL:T.cremedark,border:`1.5px dashed ${fotoCupom?T.verde:T.borda}`,borderRadius:10,padding:"10px 14px",cursor:"pointer"}}>
             <input type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>setFotoCupom(e.target.files[0]||null)}/>
             <span style={{fontSize:20}}>{fotoCupom?"✅":"📷"}</span>
-            <span style={{fontFamily:"system-ui",fontSize:13,fontWeight:600,color:fotoCupom?T.verde:T.chocoM}}>
-              {fotoCupom?`${fotoCupom.name.slice(0,25)}...`:"Tirar foto ou escolher da galeria"}
-            </span>
+            <span style={{fontFamily:"system-ui",fontSize:13,fontWeight:600,color:fotoCupom?T.verde:T.chocoM}}>{fotoCupom?fotoCupom.name.slice(0,25):"Tirar foto ou escolher da galeria"}</span>
             {fotoCupom&&<button onClick={e=>{e.preventDefault();setFotoCupom(null);}} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",fontSize:16,color:T.chocoL}}>✕</button>}
           </label>
         </div>
@@ -500,7 +483,6 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
       <div style={{position:"relative",maxWidth:400,width:"100%"}}>
         <img src={modalFoto} alt="Cupom" style={{width:"100%",borderRadius:12,display:"block"}}/>
         <button onClick={()=>setModalFoto(null)} style={{position:"absolute",top:-12,right:-12,width:32,height:32,borderRadius:"50%",background:T.vermelho,border:"none",color:"#fff",fontSize:16,cursor:"pointer",fontWeight:700}}>✕</button>
-        <p style={{textAlign:"center",color:"rgba(255,255,255,.6)",fontFamily:"system-ui",fontSize:12,marginTop:10}}>Toque fora para fechar</p>
       </div>
     </div>}
 
@@ -510,22 +492,11 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
         Use para corrigir diferenças: troco, entrada não registrada, correção de erro, etc.
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div>
-          <div style={{fontFamily:"system-ui",fontSize:12,color:T.chocoM,fontWeight:600,marginBottom:8}}>Tipo de ajuste</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <button onClick={()=>setTipoAjuste("entrada")}
-              style={{padding:"9px 8px",border:`2px solid ${tipoAjuste==="entrada"?T.verde:T.borda}`,borderRadius:10,cursor:"pointer",
-                background:tipoAjuste==="entrada"?T.verdeL:T.branco,fontFamily:"system-ui",fontSize:12,fontWeight:700,color:tipoAjuste==="entrada"?T.verde:T.chocoM}}>
-              ➕ Entrada
-            </button>
-            <button onClick={()=>setTipoAjuste("saida")}
-              style={{padding:"9px 8px",border:`2px solid ${tipoAjuste==="saida"?T.vermelho:T.borda}`,borderRadius:10,cursor:"pointer",
-                background:tipoAjuste==="saida"?T.vermelhoL:T.branco,fontFamily:"system-ui",fontSize:12,fontWeight:700,color:tipoAjuste==="saida"?T.vermelho:T.chocoM}}>
-              ➖ Saída
-            </button>
-          </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <button onClick={()=>setTipoAjuste("entrada")} style={{padding:"9px 8px",border:`2px solid ${tipoAjuste==="entrada"?T.verde:T.borda}`,borderRadius:10,cursor:"pointer",background:tipoAjuste==="entrada"?T.verdeL:T.branco,fontFamily:"system-ui",fontSize:12,fontWeight:700,color:tipoAjuste==="entrada"?T.verde:T.chocoM}}>➕ Entrada</button>
+          <button onClick={()=>setTipoAjuste("saida")} style={{padding:"9px 8px",border:`2px solid ${tipoAjuste==="saida"?T.vermelho:T.borda}`,borderRadius:10,cursor:"pointer",background:tipoAjuste==="saida"?T.vermelhoL:T.branco,fontFamily:"system-ui",fontSize:12,fontWeight:700,color:tipoAjuste==="saida"?T.vermelho:T.chocoM}}>➖ Saída</button>
         </div>
-        <Input label="Descrição" value={descAjuste} onChange={setDescAjuste} placeholder="Ex: Correção de troco, entrada não registrada..."/>
+        <Input label="Descrição" value={descAjuste} onChange={setDescAjuste} placeholder="Ex: Correção de troco..."/>
         <Input label="Valor (R$)" type="number" value={valorAjuste} onChange={setValorAjuste} placeholder="0,00"/>
         <Btn loading={loadingAjuste} variant={tipoAjuste==="entrada"?"verde":"danger"}
           onClick={async()=>{
@@ -535,8 +506,7 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
             const {data}=await supabase.from("ajustes_caixa").insert({user_id:userId,valor:v,descricao:descAjuste,data:hoje(),hora:horaAgora()}).select().single();
             setLoadingAjuste(false);
             if(data){onNovoAjuste(data);setDescAjuste("");setValorAjuste("");setTipoAjuste("entrada");}
-          }}
-          disabled={!descAjuste||!valorAjuste}>
+          }} disabled={!descAjuste||!valorAjuste}>
           {tipoAjuste==="entrada"?"➕ Registrar entrada":"➖ Registrar saída"}
         </Btn>
       </div>
@@ -558,8 +528,6 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
           <span style={{fontFamily:"Georgia,serif",fontSize:18,color:totalVendasHoje-totalDespHoje>=0?"#7fe8b0":"#f99",fontWeight:700}}>{brl(totalVendasHoje-totalDespHoje)}</span>
         </div>
       </Card>
-
-      {/* por forma de pagamento */}
       <Card>
         <div style={{fontFamily:"system-ui",fontSize:10,color:T.chocoL,fontWeight:700,marginBottom:10}}>RECEBIMENTOS HOJE POR FORMA</div>
         {FORMAS_PGTO.map(f=>{
@@ -571,7 +539,6 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
           </div>;
         })}
       </Card>
-
       <Card>
         <div style={{fontFamily:"system-ui",fontSize:10,color:T.chocoL,fontWeight:700,marginBottom:10}}>DESPESAS DE HOJE</div>
         {despesas.filter(d=>d.data===hoje()).length===0&&<p style={{fontFamily:"system-ui",fontSize:13,color:T.chocoM}}>Nenhuma despesa hoje.</p>}
@@ -581,7 +548,7 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
             <div style={{flex:1}}>
               <div style={{fontFamily:"system-ui",fontSize:13,color:T.choco,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
                 {d.descricao}
-                {d.cupom_url&&<button onClick={()=>verFoto(d.cupom_url)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:0}} title="Ver cupom">🧾</button>}
+                {d.cupom_url&&<button onClick={()=>verFoto(d.cupom_url)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:0}}>🧾</button>}
               </div>
               <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM}}>{fp?.emoji} {fp?.label} · {d.hora}</div>
             </div>
@@ -814,7 +781,6 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
 
   const valorMin=config?(config.salario_mensal/config.horas_mes/60):0;
   const custosFixosMes=config?.custos_fixos_mes||0;
-  const valorMinFixo=config&&config.horas_mes?(custosFixosMes/config.horas_mes/60):0;
 
   function novaSubReceita(){
     setSubReceitas(prev=>[...prev,{id:Date.now(),sub_ficha_id:"",quantidade:"1",unidade:"un"}]);
@@ -853,18 +819,16 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
   const totalIngredientes=ingredientes.reduce((s,i)=>s+custoIngrediente(i),0);
   const totalSubReceitas=subReceitas.reduce((s,sr)=>s+custoSubReceita(sr),0);
   const custoMaoObra=valorMin*parseFloat(tempo||0);
-  const custosFixosRateados=valorMinFixo*parseFloat(tempo||0);
   const custoEmbalagem=parseFloat(custEmb||0);
   const custoRotulo=parseFloat(custRot||0);
   const custoOutros=parseFloat(custOut||0);
-  const custoTotal=totalIngredientes+totalSubReceitas+custoMaoObra+custosFixosRateados+custoEmbalagem+custoRotulo+custoOutros;
+  const custoTotal=totalIngredientes+totalSubReceitas+custoMaoObra+custoEmbalagem+custoRotulo+custoOutros;
   const unidades=parseInt(rendUnid||1);
   const custoPorUnidade=unidades>0?custoTotal/unidades:0;
 
   function calcDRE(ficha,depth=0){
-    if(depth>3) return {totIngr:0,totSub:0,mo:0,fixos:0,emb:0,total:0,custoPorUnidade:0};
+    if(depth>3) return {totIngr:0,totSub:0,mo:0,emb:0,total:0,custoPorUnidade:0};
     const vm=config?(config.salario_mensal/config.horas_mes/60):0;
-    const vmf=config&&config.horas_mes?((config.custos_fixos_mes||0)/config.horas_mes/60):0;
     const ingrs=ficha.ficha_ingredientes||[];
     const totIngr=ingrs.reduce((s,i)=>{
       const ins=insumos.find(x=>x.id===i.insumo_id);
@@ -879,43 +843,44 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
       return s+dreSub.custoPorUnidade*parseFloat(sr.quantidade||1);
     },0);
     const mo=vm*(ficha.tempo_preparo_min||0);
-    const fixos=vmf*(ficha.tempo_preparo_min||0);
     const emb=(ficha.custo_embalagem||0)+(ficha.custo_rotulo||0)+(ficha.custo_outros||0);
-    const total=totIngr+totSub+mo+fixos+emb;
+    const total=totIngr+totSub+mo+emb;
     const u=ficha.rendimento_unidades||1;
-    return {totIngr,totSub,mo,fixos,emb,total,custoPorUnidade:total/u};
+    return {totIngr,totSub,mo,emb,total,custoPorUnidade:total/u};
   }
 
   async function salvar(){
     if(!nome.trim()) return;
     setLoading(true);
-    const payload={user_id:userId,nome,rendimento_unidades:parseInt(rendUnid)||1,
-      rendimento_peso:parseFloat(rendPeso)||0,unidade_peso:unidPeso,
-      tempo_preparo_min:parseInt(tempo)||0,custo_embalagem:parseFloat(custEmb)||0,
-      custo_rotulo:parseFloat(custRot)||0,custo_outros:parseFloat(custOut)||0,observacoes:obs};
-    let fichaId=fichaAtual?.id;
-    if(fichaId){
-      await supabase.from("fichas_tecnicas").update(payload).eq("id",fichaId);
-      await supabase.from("ficha_ingredientes").delete().eq("ficha_id",fichaId);
-    } else {
-      const {data}=await supabase.from("fichas_tecnicas").insert(payload).select().single();
-      fichaId=data?.id;
-    }
-    if(fichaId){
-      await supabase.from("ficha_subreceitas").delete().eq("ficha_id",fichaId);
-      const rowsIngr=ingredientes.filter(i=>i.insumo_id&&i.quantidade).map(i=>({
+    try {
+      const payload={user_id:userId,nome,rendimento_unidades:parseInt(rendUnid)||1,
+        rendimento_peso:parseFloat(rendPeso)||0,unidade_peso:unidPeso,
+        tempo_preparo_min:parseInt(tempo)||0,custo_embalagem:parseFloat(custEmb)||0,
+        custo_rotulo:parseFloat(custRot)||0,custo_outros:parseFloat(custOut)||0,observacoes:obs};
+      let fichaId=fichaAtual?.id;
+      if(fichaId){
+        await supabase.from("fichas_tecnicas").update(payload).eq("id",fichaId);
+        await supabase.from("ficha_ingredientes").delete().eq("ficha_id",fichaId);
+        await supabase.from("ficha_subreceitas").delete().eq("ficha_id",fichaId);
+      } else {
+        const {data,error}=await supabase.from("fichas_tecnicas").insert(payload).select("id").single();
+        if(error||!data?.id){setLoading(false);return;}
+        fichaId=data.id;
+      }
+      const rowsIngr=ingredientes.filter(i=>i.insumo_id&&parseFloat(i.quantidade)>0).map(i=>({
         ficha_id:fichaId,insumo_id:i.insumo_id,quantidade:parseFloat(i.quantidade),unidade:i.unidade
       }));
       if(rowsIngr.length>0) await supabase.from("ficha_ingredientes").insert(rowsIngr);
-      const rowsSub=subReceitas.filter(s=>s.sub_ficha_id&&s.quantidade).map(s=>({
+      const rowsSub=subReceitas.filter(s=>s.sub_ficha_id&&parseFloat(s.quantidade)>0).map(s=>({
         ficha_id:fichaId,sub_ficha_id:s.sub_ficha_id,quantidade:parseFloat(s.quantidade),unidade:s.unidade
       }));
       if(rowsSub.length>0) await supabase.from("ficha_subreceitas").insert(rowsSub);
-    }
-    const {data:updated}=await supabase.from("fichas_tecnicas")
-      .select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("id",fichaId).single();
+      const {data:updated}=await supabase.from("fichas_tecnicas")
+        .select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("id",fichaId).single();
+      if(updated) onSalvar(updated,!!fichaAtual);
+      limpar();
+    } catch(e){ console.error(e); }
     setLoading(false);
-    if(updated){onSalvar(updated,!!fichaAtual);limpar();}
   }
 
   function limpar(){
@@ -979,7 +944,6 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
       {label:"🔗 Sub-receitas",valor:dre.totSub||0,cor:T.verde},
       {label:"📦 Embalagem + Rótulo",valor:dre.emb,cor:T.roxo},
       {label:"👩‍🍳 Mão de obra",valor:dre.mo,cor:T.amarelo},
-      {label:"🏭 Custos fixos rateados",valor:dre.fixos||0,cor:T.dourado||"#C9943A"},
     ].filter(it=>it.valor>0);
     return <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <button onClick={()=>setTela("lista")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:T.chocoM,textAlign:"left",padding:0}}>← Voltar</button>
@@ -1130,26 +1094,19 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
     {custoTotal>0&&<Card style={{background:T.choco}}>
       <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,marginBottom:10}}>PRÉVIA DO CUSTO</div>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>🧂 Ingredientes</span>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Ingredientes</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(totalIngredientes)}</span>
       </div>
       {totalSubReceitas>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>🔗 Sub-receitas</span>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Sub-receitas</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(totalSubReceitas)}</span>
       </div>}
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>👩‍🍳 Mão de obra ({tempo||0}min)</span>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Mão de obra ({tempo||0}min)</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoMaoObra)}</span>
       </div>
-      {custosFixosRateados>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>🏭 Custos fixos ({tempo||0}min)</span>
-        <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#f0c97a"}}>{brl(custosFixosRateados)}</span>
-      </div>}
-      {!config&&<div style={{background:"rgba(255,200,0,.1)",borderRadius:8,padding:"6px 10px",marginBottom:6}}>
-        <span style={{fontFamily:"system-ui",fontSize:11,color:"#f0c97a"}}>⚠️ Configure salário e custos fixos em ⚙️ Config para rateio automático.</span>
-      </div>}
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>📦 Embalagem + outros</span>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Embalagem + outros</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoEmbalagem+custoRotulo+custoOutros)}</span>
       </div>
       <div style={{borderTop:"1px solid rgba(255,255,255,.15)",paddingTop:10,display:"flex",justifyContent:"space-between"}}>
@@ -1507,7 +1464,7 @@ export default function App(){
       onFechar={()=>setShowSaldoModal(false)}/>}
     <Nav tela={tela} setTela={setTela}/>
     <div style={{paddingBottom:40}}>
-      {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)}/>}
+      {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)} setShowRelatorio={(v)=>setTela(v?"relatorio":"dashboard")}/>}
       {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes}
         onNovaVenda={v=>setVendas(p=>[...p,v])} onNovaDespesa={d=>setDespesas(p=>[...p,d])}
         onNovoAjuste={a=>setAjustes(p=>[...p,a])}/>}
