@@ -205,7 +205,7 @@ function Nav({tela,setTela}){
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtual,totalVendasMes,totalDespMes,totalAjustesMes,setTela,onLogout,onAbrirSaldo,setShowRelatorio}){
+function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtual,totalVendasMes,totalDespMes,totalAjustesMes,setTela,onLogout,onAbrirSaldo}){
   const nome=user?.user_metadata?.nome_confeitaria||"Confeitaria";
   const vendasHoje=vendas.filter(v=>v.data===hoje()).reduce((s,v)=>s+v.total,0);
 
@@ -274,27 +274,6 @@ function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtua
       <div style={{fontFamily:"Georgia,serif",fontSize:14,color:T.choco}}>{maisVendido}</div>
     </Card>}
 
-    {/* Card resumido do mês */}
-    <Card style={{padding:"14px 16px",cursor:"pointer",border:`1.5px solid ${T.borda}`}} onClick={()=>setShowRelatorio(true)}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,letterSpacing:.5}}>📊 RESUMO DO MÊS</div>
-        <span style={{fontFamily:"system-ui",fontSize:12,color:T.rosa,fontWeight:600}}>Ver completo →</span>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        <div style={{background:T.verdeL,borderRadius:10,padding:"10px 12px"}}>
-          <div style={{fontFamily:"system-ui",fontSize:10,color:T.verde,fontWeight:700}}>RECEITA</div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:16,color:T.verde,fontWeight:700}}>{brl(totalVendasMes)}</div>
-        </div>
-        <div style={{background:T.vermelhoL,borderRadius:10,padding:"10px 12px"}}>
-          <div style={{fontFamily:"system-ui",fontSize:10,color:T.vermelho,fontWeight:700}}>DESPESAS</div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:16,color:T.vermelho,fontWeight:700}}>{brl(totalDespMes)}</div>
-        </div>
-      </div>
-      <div style={{marginTop:8,background:totalVendasMes-totalDespMes>=0?T.verdeL:T.vermelhoL,borderRadius:10,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontFamily:"system-ui",fontSize:12,color:totalVendasMes-totalDespMes>=0?T.verde:T.vermelho,fontWeight:700}}>Lucro líquido</span>
-        <span style={{fontFamily:"Georgia,serif",fontSize:16,color:totalVendasMes-totalDespMes>=0?T.verde:T.vermelho,fontWeight:700}}>{brl(totalVendasMes-totalDespMes)}</span>
-      </div>
-    </Card>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
       <Btn variant="primary" onClick={()=>setTela("caixa")}>💰 Nova Venda</Btn>
@@ -1516,7 +1495,7 @@ export default function App(){
       onFechar={()=>setShowSaldoModal(false)}/>}
     <Nav tela={tela} setTela={setTela}/>
     <div style={{paddingBottom:40}}>
-      {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)} setShowRelatorio={(v)=>setTela(v?"relatorio":"dashboard")}/>}
+      {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)}/>}
       {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes}
         onNovaVenda={v=>setVendas(p=>[...p,v])} onNovaDespesa={d=>setDespesas(p=>[...p,d])}
         onNovoAjuste={a=>setAjustes(p=>[...p,a])}/>}
