@@ -819,10 +819,12 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
   const totalIngredientes=ingredientes.reduce((s,i)=>s+custoIngrediente(i),0);
   const totalSubReceitas=subReceitas.reduce((s,sr)=>s+custoSubReceita(sr),0);
   const custoMaoObra=valorMin*parseFloat(tempo||0);
+  const cfMin=custosFixosMes>0&&config?.horas_mes>0?(custosFixosMes/(config.horas_mes*60)):0;
+  const custoFixosRateados=cfMin*parseFloat(tempo||0);
   const custoEmbalagem=parseFloat(custEmb||0);
   const custoRotulo=parseFloat(custRot||0);
   const custoOutros=parseFloat(custOut||0);
-  const custoTotal=totalIngredientes+totalSubReceitas+custoMaoObra+custoEmbalagem+custoRotulo+custoOutros;
+  const custoTotal=totalIngredientes+totalSubReceitas+custoMaoObra+custoFixosRateados+custoEmbalagem+custoRotulo+custoOutros;
   const unidades=parseInt(rendUnid||1);
   const custoPorUnidade=unidades>0?custoTotal/unidades:0;
 
@@ -843,44 +845,43 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
       return s+dreSub.custoPorUnidade*parseFloat(sr.quantidade||1);
     },0);
     const mo=vm*(ficha.tempo_preparo_min||0);
+    const cfMin=custosFixosMes>0&&config?.horas_mes>0?(custosFixosMes/(config.horas_mes*60)):0;
+    const cf=cfMin*(ficha.tempo_preparo_min||0);
     const emb=(ficha.custo_embalagem||0)+(ficha.custo_rotulo||0)+(ficha.custo_outros||0);
-    const total=totIngr+totSub+mo+emb;
+    const total=totIngr+totSub+mo+cf+emb;
     const u=ficha.rendimento_unidades||1;
-    return {totIngr,totSub,mo,emb,total,custoPorUnidade:total/u};
+    return {totIngr,totSub,mo,cf,emb,total,custoPorUnidade:total/u};
   }
 
   async function salvar(){
     if(!nome.trim()) return;
     setLoading(true);
-    try {
-      const payload={user_id:userId,nome,rendimento_unidades:parseInt(rendUnid)||1,
-        rendimento_peso:parseFloat(rendPeso)||0,unidade_peso:unidPeso,
-        tempo_preparo_min:parseInt(tempo)||0,custo_embalagem:parseFloat(custEmb)||0,
-        custo_rotulo:parseFloat(custRot)||0,custo_outros:parseFloat(custOut)||0,observacoes:obs};
-      let fichaId=fichaAtual?.id;
-      if(fichaId){
-        await supabase.from("fichas_tecnicas").update(payload).eq("id",fichaId);
-        await supabase.from("ficha_ingredientes").delete().eq("ficha_id",fichaId);
-        await supabase.from("ficha_subreceitas").delete().eq("ficha_id",fichaId);
-      } else {
-        const {data,error}=await supabase.from("fichas_tecnicas").insert(payload).select("id").single();
-        if(error||!data?.id){setLoading(false);return;}
-        fichaId=data.id;
-      }
-      const rowsIngr=ingredientes.filter(i=>i.insumo_id&&parseFloat(i.quantidade)>0).map(i=>({
-        ficha_id:fichaId,insumo_id:i.insumo_id,quantidade:parseFloat(i.quantidade),unidade:i.unidade
-      }));
-      if(rowsIngr.length>0) await supabase.from("ficha_ingredientes").insert(rowsIngr);
-      const rowsSub=subReceitas.filter(s=>s.sub_ficha_id&&parseFloat(s.quantidade)>0).map(s=>({
-        ficha_id:fichaId,sub_ficha_id:s.sub_ficha_id,quantidade:parseFloat(s.quantidade),unidade:s.unidade
-      }));
-      if(rowsSub.length>0) await supabase.from("ficha_subreceitas").insert(rowsSub);
-      const {data:updated}=await supabase.from("fichas_tecnicas")
-        .select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("id",fichaId).single();
-      if(updated) onSalvar(updated,!!fichaAtual);
-      limpar();
-    } catch(e){ console.error(e); }
+    const payload={user_id:userId,nome,rendimento_unidades:parseInt(rendUnid)||1,
+      rendimento_peso:parseFloat(rendPeso)||0,unidade_peso:unidPeso,
+      tempo_preparo_min:parseInt(tempo)||0,custo_embalagem:parseFloat(custEmb)||0,
+      custo_rotulo:parseFloat(custRot)||0,custo_outros:parseFloat(custOut)||0,observacoes:obs};
+    let fichaId=fichaAtual?.id;
+    if(fichaId){
+      await supabase.from("fichas_tecnicas").update(payload).eq("id",fichaId);
+      await supabase.from("ficha_ingredientes").delete().eq("ficha_id",fichaId);
+      await supabase.from("ficha_subreceitas").delete().eq("ficha_id",fichaId);
+    } else {
+      const r=await supabase.from("fichas_tecnicas").insert(payload).select("id").single();
+      fichaId=r.data?.id||null;
+    }
+    if(!fichaId){setLoading(false);return;}
+    const rowsIngr=ingredientes.filter(i=>i.insumo_id&&parseFloat(i.quantidade)>0).map(i=>({
+      ficha_id:fichaId,insumo_id:i.insumo_id,quantidade:parseFloat(i.quantidade),unidade:i.unidade
+    }));
+    if(rowsIngr.length>0) await supabase.from("ficha_ingredientes").insert(rowsIngr);
+    const rowsSub=subReceitas.filter(s=>s.sub_ficha_id&&parseFloat(s.quantidade)>0).map(s=>({
+      ficha_id:fichaId,sub_ficha_id:s.sub_ficha_id,quantidade:parseFloat(s.quantidade),unidade:s.unidade
+    }));
+    if(rowsSub.length>0) await supabase.from("ficha_subreceitas").insert(rowsSub);
+    const {data:updated}=await supabase.from("fichas_tecnicas")
+      .select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("id",fichaId).single();
     setLoading(false);
+    if(updated){onSalvar(updated,!!fichaAtual);limpar();}
   }
 
   function limpar(){
@@ -944,6 +945,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
       {label:"🔗 Sub-receitas",valor:dre.totSub||0,cor:T.verde},
       {label:"📦 Embalagem + Rótulo",valor:dre.emb,cor:T.roxo},
       {label:"👩‍🍳 Mão de obra",valor:dre.mo,cor:T.amarelo},
+      {label:"🏠 Custos fixos",valor:dre.cf||0,cor:T.chocoM},
     ].filter(it=>it.valor>0);
     return <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <button onClick={()=>setTela("lista")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:T.chocoM,textAlign:"left",padding:0}}>← Voltar</button>
@@ -1105,6 +1107,10 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
         <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Mão de obra ({tempo||0}min)</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoMaoObra)}</span>
       </div>
+      {custoFixosRateados>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Custos fixos ({tempo||0}min)</span>
+        <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoFixosRateados)}</span>
+      </div>}
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
         <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Embalagem + outros</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoEmbalagem+custoRotulo+custoOutros)}</span>
