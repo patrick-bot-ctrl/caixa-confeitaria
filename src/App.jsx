@@ -814,6 +814,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
 
   const valorMin=config?(config.salario_mensal/config.horas_mes/60):0;
   const custosFixosMes=config?.custos_fixos_mes||0;
+  const valorMinFixo=config&&config.horas_mes?(custosFixosMes/config.horas_mes/60):0;
 
   function novaSubReceita(){
     setSubReceitas(prev=>[...prev,{id:Date.now(),sub_ficha_id:"",quantidade:"1",unidade:"un"}]);
@@ -852,16 +853,18 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
   const totalIngredientes=ingredientes.reduce((s,i)=>s+custoIngrediente(i),0);
   const totalSubReceitas=subReceitas.reduce((s,sr)=>s+custoSubReceita(sr),0);
   const custoMaoObra=valorMin*parseFloat(tempo||0);
+  const custosFixosRateados=valorMinFixo*parseFloat(tempo||0);
   const custoEmbalagem=parseFloat(custEmb||0);
   const custoRotulo=parseFloat(custRot||0);
   const custoOutros=parseFloat(custOut||0);
-  const custoTotal=totalIngredientes+totalSubReceitas+custoMaoObra+custoEmbalagem+custoRotulo+custoOutros;
+  const custoTotal=totalIngredientes+totalSubReceitas+custoMaoObra+custosFixosRateados+custoEmbalagem+custoRotulo+custoOutros;
   const unidades=parseInt(rendUnid||1);
   const custoPorUnidade=unidades>0?custoTotal/unidades:0;
 
   function calcDRE(ficha,depth=0){
-    if(depth>3) return {totIngr:0,totSub:0,mo:0,emb:0,total:0,custoPorUnidade:0};
+    if(depth>3) return {totIngr:0,totSub:0,mo:0,fixos:0,emb:0,total:0,custoPorUnidade:0};
     const vm=config?(config.salario_mensal/config.horas_mes/60):0;
+    const vmf=config&&config.horas_mes?((config.custos_fixos_mes||0)/config.horas_mes/60):0;
     const ingrs=ficha.ficha_ingredientes||[];
     const totIngr=ingrs.reduce((s,i)=>{
       const ins=insumos.find(x=>x.id===i.insumo_id);
@@ -876,10 +879,11 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
       return s+dreSub.custoPorUnidade*parseFloat(sr.quantidade||1);
     },0);
     const mo=vm*(ficha.tempo_preparo_min||0);
+    const fixos=vmf*(ficha.tempo_preparo_min||0);
     const emb=(ficha.custo_embalagem||0)+(ficha.custo_rotulo||0)+(ficha.custo_outros||0);
-    const total=totIngr+totSub+mo+emb;
+    const total=totIngr+totSub+mo+fixos+emb;
     const u=ficha.rendimento_unidades||1;
-    return {totIngr,totSub,mo,emb,total,custoPorUnidade:total/u};
+    return {totIngr,totSub,mo,fixos,emb,total,custoPorUnidade:total/u};
   }
 
   async function salvar(){
@@ -975,6 +979,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
       {label:"🔗 Sub-receitas",valor:dre.totSub||0,cor:T.verde},
       {label:"📦 Embalagem + Rótulo",valor:dre.emb,cor:T.roxo},
       {label:"👩‍🍳 Mão de obra",valor:dre.mo,cor:T.amarelo},
+      {label:"🏭 Custos fixos rateados",valor:dre.fixos||0,cor:T.dourado||"#C9943A"},
     ].filter(it=>it.valor>0);
     return <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <button onClick={()=>setTela("lista")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:T.chocoM,textAlign:"left",padding:0}}>← Voltar</button>
@@ -1125,19 +1130,26 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
     {custoTotal>0&&<Card style={{background:T.choco}}>
       <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,marginBottom:10}}>PRÉVIA DO CUSTO</div>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Ingredientes</span>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>🧂 Ingredientes</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(totalIngredientes)}</span>
       </div>
       {totalSubReceitas>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Sub-receitas</span>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>🔗 Sub-receitas</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(totalSubReceitas)}</span>
       </div>}
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Mão de obra ({tempo||0}min)</span>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>👩‍🍳 Mão de obra ({tempo||0}min)</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoMaoObra)}</span>
       </div>
+      {custosFixosRateados>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>🏭 Custos fixos ({tempo||0}min)</span>
+        <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#f0c97a"}}>{brl(custosFixosRateados)}</span>
+      </div>}
+      {!config&&<div style={{background:"rgba(255,200,0,.1)",borderRadius:8,padding:"6px 10px",marginBottom:6}}>
+        <span style={{fontFamily:"system-ui",fontSize:11,color:"#f0c97a"}}>⚠️ Configure salário e custos fixos em ⚙️ Config para rateio automático.</span>
+      </div>}
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Embalagem + outros</span>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>📦 Embalagem + outros</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(custoEmbalagem+custoRotulo+custoOutros)}</span>
       </div>
       <div style={{borderTop:"1px solid rgba(255,255,255,.15)",paddingTop:10,display:"flex",justifyContent:"space-between"}}>
