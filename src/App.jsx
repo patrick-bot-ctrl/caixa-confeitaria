@@ -660,6 +660,102 @@ function Insumos({userId,insumos,onSalvar,onExcluir}){
   </div>;
 }
 
+
+// ─── EMBALAGENS ───────────────────────────────────────────────────────────────
+function Embalagens({userId,embalagens,onSalvar,onExcluir}){
+  const [nome,setNome]=useState("");
+  const [qtdEmb,setQtdEmb]=useState("");
+  const [precoEmb,setPrecoEmb]=useState("");
+  const [editId,setEditId]=useState(null);
+  const [loading,setLoading]=useState(false);
+
+  const custoPorUnidade = (qtdEmb&&precoEmb) ? parseFloat(precoEmb)/parseFloat(qtdEmb) : null;
+
+  async function salvar(){
+    if(!nome.trim()||!qtdEmb||!precoEmb) return;
+    setLoading(true);
+    const payload={user_id:userId,nome,qtd_embalagem:parseFloat(qtdEmb),preco_embalagem:parseFloat(precoEmb)};
+    let result;
+    if(editId){
+      const {data}=await supabase.from("embalagens").update(payload).eq("id",editId).select().single();
+      result={data,edit:true};
+    } else {
+      const {data}=await supabase.from("embalagens").insert(payload).select().single();
+      result={data,edit:false};
+    }
+    setLoading(false);
+    if(result.data){onSalvar(result.data,result.edit);limpar();}
+  }
+
+  async function excluir(id){
+    await supabase.from("embalagens").delete().eq("id",id);
+    onExcluir(id);
+  }
+
+  function editar(e){
+    setEditId(e.id);setNome(e.nome);setQtdEmb(String(e.qtd_embalagem));setPrecoEmb(String(e.preco_embalagem));
+  }
+
+  function limpar(){setEditId(null);setNome("");setQtdEmb("");setPrecoEmb("");}
+
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <Card style={{border:editId?`2px solid ${T.rosa}`:"none"}}>
+      <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>
+        {editId?"✏️ EDITANDO EMBALAGEM":"➕ NOVA EMBALAGEM"}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:11}}>
+        <Input label="Nome da embalagem" value={nome} onChange={setNome} placeholder="Ex: Caixinha kraft 8cm"/>
+        <Input label="Qtd no pacote (unidades)" type="number" value={qtdEmb} onChange={setQtdEmb} placeholder="50"/>
+        <Input label="Preço do pacote (R$)" type="number" value={precoEmb} onChange={setPrecoEmb} placeholder="45,00"/>
+
+        {custoPorUnidade!==null&&<div style={{background:T.amareloL,borderRadius:10,padding:"10px 14px"}}>
+          <div style={{fontFamily:"system-ui",fontSize:10,color:T.amarelo,fontWeight:700}}>CUSTO POR UNIDADE</div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:18,color:T.amarelo,fontWeight:700}}>
+            R$ {custoPorUnidade.toFixed(4)}
+          </div>
+          <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,marginTop:1}}>
+            {brl(parseFloat(precoEmb))} ÷ {qtdEmb}un
+          </div>
+        </div>}
+
+        <div style={{display:"flex",gap:8}}>
+          <Btn loading={loading} style={{flex:1}} onClick={salvar} disabled={!nome||!qtdEmb||!precoEmb}>
+            {editId?"✓ Salvar":"➕ Adicionar"}
+          </Btn>
+          {editId&&<Btn variant="ghost" onClick={limpar}>Cancelar</Btn>}
+        </div>
+      </div>
+    </Card>
+
+    <Secao titulo={`EMBALAGENS CADASTRADAS (${embalagens.length})`}>
+      {embalagens.length===0&&<p style={{fontFamily:"system-ui",fontSize:13,color:T.chocoM,padding:"8px 0"}}>Nenhuma embalagem cadastrada ainda.</p>}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {embalagens.map(e=>{
+          const cpu=e.preco_embalagem/e.qtd_embalagem;
+          return <Card key={e.id} style={{padding:"12px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{fontFamily:"system-ui",fontSize:13,color:T.choco,fontWeight:700}}>{e.nome}</div>
+                <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,marginTop:2}}>
+                  Pacote: {e.qtd_embalagem}un por {brl(e.preco_embalagem)}
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontFamily:"Georgia,serif",fontSize:14,color:T.amarelo,fontWeight:700}}>R$ {cpu.toFixed(4)}</div>
+                <div style={{fontFamily:"system-ui",fontSize:10,color:T.chocoL}}>por unidade</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <Btn variant="ghost" style={{flex:1,padding:"6px 0",fontSize:11}} onClick={()=>editar(e)}>✏️ Editar</Btn>
+              <Btn variant="danger" style={{flex:1,padding:"6px 0",fontSize:11}} onClick={()=>excluir(e.id)}>🗑️ Excluir</Btn>
+            </div>
+          </Card>;
+        })}
+      </div>
+    </Secao>
+  </div>;
+}
+
 // ─── PRODUTOS (precificação simples) ──────────────────────────────────────────
 function Produtos({userId,produtos,onSalvar,onExcluir}){
   const [nome,setNome]=useState("");
@@ -763,7 +859,7 @@ function Produtos({userId,produtos,onSalvar,onExcluir}){
 
 
 // ─── FICHAS TÉCNICAS ──────────────────────────────────────────────────────────
-function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReload}){
+function FichasTecnicas({userId,fichas,insumos,embalagens,config,onSalvar,onExcluir,onReload}){
   const [tela,setTela]=useState("lista"); // lista | form | detalhe
   const [fichaAtual,setFichaAtual]=useState(null);
   const [nome,setNome]=useState("");
@@ -777,6 +873,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
   const [obs,setObs]=useState("");
   const [ingredientes,setIngredientes]=useState([]);
   const [subReceitas,setSubReceitas]=useState([]);
+  const [embFicha,setEmbFicha]=useState([]);
   const [loading,setLoading]=useState(false);
 
   const valorMin=config?(config.salario_mensal/config.horas_mes/60):0;
@@ -796,6 +893,21 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
     if(!f) return 0;
     const dre=calcDRE(f);
     return dre.custoPorUnidade*parseFloat(sub.quantidade||1);
+  }
+
+  function novaEmbFicha(){
+    setEmbFicha(prev=>[...prev,{id:Date.now(),embalagem_id:"",quantidade:"1"}]);
+  }
+  function atualizaEmbFicha(id,campo,val){
+    setEmbFicha(prev=>prev.map(e=>e.id===id?{...e,[campo]:val}:e));
+  }
+  function removeEmbFicha(id){setEmbFicha(prev=>prev.filter(e=>e.id!==id));}
+
+  function custoEmbFicha(item){
+    if(!item.embalagem_id) return 0;
+    const e=embalagens.find(x=>x.id===item.embalagem_id);
+    if(!e) return 0;
+    return (e.preco_embalagem/e.qtd_embalagem)*parseFloat(item.quantidade||1);
   }
 
   function novoIngrediente(){
@@ -818,13 +930,14 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
 
   const totalIngredientes=ingredientes.reduce((s,i)=>s+custoIngrediente(i),0);
   const totalSubReceitas=subReceitas.reduce((s,sr)=>s+custoSubReceita(sr),0);
+  const totalEmbFicha=embFicha.reduce((s,e)=>s+custoEmbFicha(e),0);
   const custoMaoObra=valorMin*parseFloat(tempo||0);
   const cfMin=custosFixosMes>0&&config?.horas_mes>0?(custosFixosMes/(config.horas_mes*60)):0;
   const custoFixosRateados=cfMin*parseFloat(tempo||0);
   const custoEmbalagem=parseFloat(custEmb||0);
   const custoRotulo=parseFloat(custRot||0);
   const custoOutros=parseFloat(custOut||0);
-  const custoTotal=totalIngredientes+totalSubReceitas+custoMaoObra+custoFixosRateados+custoEmbalagem+custoRotulo+custoOutros;
+  const custoTotal=totalIngredientes+totalSubReceitas+totalEmbFicha+custoMaoObra+custoFixosRateados+custoEmbalagem+custoRotulo+custoOutros;
   const unidades=parseInt(rendUnid||1);
   const custoPorUnidade=unidades>0?custoTotal/unidades:0;
 
@@ -844,10 +957,16 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
       const dreSub=calcDRE(sf,depth+1);
       return s+dreSub.custoPorUnidade*parseFloat(sr.quantidade||1);
     },0);
+    const embs=ficha.ficha_embalagens||[];
+    const totEmbFicha=embs.reduce((s,fe)=>{
+      const e=(embalagens||[]).find(x=>x.id===fe.embalagem_id);
+      if(!e) return s;
+      return s+(e.preco_embalagem/e.qtd_embalagem)*fe.quantidade;
+    },0);
     const mo=vm*(ficha.tempo_preparo_min||0);
     const cfMin=custosFixosMes>0&&config?.horas_mes>0?(custosFixosMes/(config.horas_mes*60)):0;
     const cf=cfMin*(ficha.tempo_preparo_min||0);
-    const emb=(ficha.custo_embalagem||0)+(ficha.custo_rotulo||0)+(ficha.custo_outros||0);
+    const emb=(ficha.custo_embalagem||0)+(ficha.custo_rotulo||0)+(ficha.custo_outros||0)+totEmbFicha;
     const total=totIngr+totSub+mo+cf+emb;
     const u=ficha.rendimento_unidades||1;
     return {totIngr,totSub,mo,cf,emb,total,custoPorUnidade:total/u};
@@ -865,6 +984,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
       await supabase.from("fichas_tecnicas").update(payload).eq("id",fichaId);
       await supabase.from("ficha_ingredientes").delete().eq("ficha_id",fichaId);
       await supabase.from("ficha_subreceitas").delete().eq("ficha_id",fichaId);
+      await supabase.from("ficha_embalagens").delete().eq("ficha_id",fichaId);
     } else {
       const r=await supabase.from("fichas_tecnicas").insert(payload).select("id").single();
       fichaId=r.data?.id||null;
@@ -878,6 +998,10 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
       ficha_id:fichaId,sub_ficha_id:s.sub_ficha_id,quantidade:parseFloat(s.quantidade),unidade:s.unidade
     }));
     if(rowsSub.length>0) await supabase.from("ficha_subreceitas").insert(rowsSub);
+    const rowsEmb=embFicha.filter(e=>e.embalagem_id&&parseFloat(e.quantidade)>0).map(e=>({
+      ficha_id:fichaId,embalagem_id:e.embalagem_id,quantidade:parseFloat(e.quantidade)
+    }));
+    if(rowsEmb.length>0) await supabase.from("ficha_embalagens").insert(rowsEmb);
     await onReload();
     setLoading(false);
     limpar();
@@ -886,7 +1010,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
   function limpar(){
     setNome("");setRendUnid("1");setRendPeso("");setUnidPeso("g");
     setTempo("");setCustEmb("");setCustRot("");setCustOut("");setObs("");
-    setIngredientes([]);setSubReceitas([]);setFichaAtual(null);setTela("lista");
+    setIngredientes([]);setSubReceitas([]);setEmbFicha([]);setFichaAtual(null);setTela("lista");
   }
 
   function editarFicha(f){
@@ -897,6 +1021,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
     setObs(f.observacoes||"");
     setIngredientes((f.ficha_ingredientes||[]).map(i=>({...i,id:i.id})));
     setSubReceitas((f.ficha_subreceitas||[]).map(s=>({...s,id:s.id})));
+    setEmbFicha((f.ficha_embalagens||[]).map(e=>({...e,id:e.id})));
     setTela("form");
   }
 
@@ -1083,6 +1208,30 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
     </Card>
 
     <Card>
+      <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>📦 EMBALAGENS CADASTRADAS</div>
+      <p style={{fontFamily:"system-ui",fontSize:12,color:T.chocoL,margin:"0 0 12px",lineHeight:1.5}}>
+        Selecione embalagens do seu cadastro. Para custos avulsos, use o campo abaixo.
+      </p>
+      {embFicha.map(item=>{
+        const e=embalagens.find(x=>x.id===item.embalagem_id);
+        const custo=custoEmbFicha(item);
+        return <div key={item.id} style={{marginBottom:12,padding:"10px 12px",background:T.cremedark,borderRadius:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontFamily:"system-ui",fontSize:12,color:T.chocoM,fontWeight:600}}>Embalagem</span>
+            <button onClick={()=>removeEmbFicha(item.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.vermelho,fontSize:16}}>✕</button>
+          </div>
+          <Select label="" value={item.embalagem_id} onChange={v=>atualizaEmbFicha(item.id,"embalagem_id",v)}
+            options={[{value:"",label:"Selecione a embalagem..."},...(embalagens||[]).map(e=>({value:e.id,label:`${e.nome} (${brl(e.preco_embalagem/e.qtd_embalagem)}/un)`}))]}/>
+          <div style={{marginTop:8}}>
+            <Input label="Quantidade usada" type="number" value={item.quantidade} onChange={v=>atualizaEmbFicha(item.id,"quantidade",v)} placeholder="1"/>
+          </div>
+          {custo>0&&<div style={{fontFamily:"system-ui",fontSize:11,color:T.amarelo,fontWeight:600,marginTop:6}}>Custo: {brl(custo)}</div>}
+        </div>;
+      })}
+      <Btn variant="secondary" onClick={novaEmbFicha} style={{width:"100%",fontSize:12}}>📦 Adicionar embalagem do cadastro</Btn>
+    </Card>
+
+    <Card>
       <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>📦 CUSTOS ADICIONAIS</div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         <Input label="Embalagem (R$)" type="number" value={custEmb} onChange={setCustEmb} placeholder="0,00"/>
@@ -1101,6 +1250,10 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
       {totalSubReceitas>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
         <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Sub-receitas</span>
         <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(totalSubReceitas)}</span>
+      </div>}
+      {totalEmbFicha>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Embalagens cadastradas</span>
+        <span style={{fontFamily:"Georgia,serif",fontSize:13,color:"#7fe8b0"}}>{brl(totalEmbFicha)}</span>
       </div>}
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
         <span style={{fontFamily:"system-ui",fontSize:13,color:"rgba(255,255,255,.7)"}}>Mão de obra ({tempo||0}min)</span>
@@ -1128,16 +1281,17 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
 }
 
 // ─── PRECIFICAÇÃO (container com subabas) ─────────────────────────────────────
-function Precificacao({userId,produtos,insumos,fichas,config,onReloadFichas,onSalvarProduto,onExcluirProduto,onSalvarInsumo,onExcluirInsumo,onSalvarFicha,onExcluirFicha}){
+function Precificacao({userId,produtos,insumos,embalagens,fichas,config,onReloadFichas,onSalvarProduto,onExcluirProduto,onSalvarInsumo,onExcluirInsumo,onSalvarEmbalagem,onExcluirEmbalagem,onSalvarFicha,onExcluirFicha}){
   const [sub,setSub]=useState("produtos");
   return <div style={{padding:"20px 16px",display:"flex",flexDirection:"column",gap:16}}>
     <h2 style={{fontFamily:"Georgia,serif",fontSize:20,color:T.choco,margin:0}}>🎂 Precificação</h2>
     <SubAba
-      abas={[{id:"produtos",emoji:"🎂",label:"Produtos"},{id:"insumos",emoji:"🧂",label:"Insumos"},{id:"fichas",emoji:"📋",label:"Fichas"}]}
+      abas={[{id:"produtos",emoji:"🎂",label:"Produtos"},{id:"insumos",emoji:"🧂",label:"Insumos"},{id:"embalagens",emoji:"📦",label:"Embalagens"},{id:"fichas",emoji:"📋",label:"Fichas"}]}
       ativa={sub} onChange={setSub}/>
     {sub==="produtos"&&<Produtos userId={userId} produtos={produtos} onSalvar={onSalvarProduto} onExcluir={onExcluirProduto}/>}
     {sub==="insumos"&&<Insumos userId={userId} insumos={insumos} onSalvar={onSalvarInsumo} onExcluir={onExcluirInsumo}/>}
-    {sub==="fichas"&&<FichasTecnicas userId={userId} fichas={fichas} insumos={insumos} config={config} onSalvar={onSalvarFicha} onExcluir={onExcluirFicha} onReload={onReloadFichas}/>}
+    {sub==="embalagens"&&<Embalagens userId={userId} embalagens={embalagens} onSalvar={onSalvarEmbalagem} onExcluir={onExcluirEmbalagem}/>}
+    {sub==="fichas"&&<FichasTecnicas userId={userId} fichas={fichas} insumos={insumos} embalagens={embalagens} config={config} onSalvar={onSalvarFicha} onExcluir={onExcluirFicha} onReload={onReloadFichas}/>}
   </div>;
 }
 
@@ -1387,10 +1541,12 @@ async function fetchFichasCompletas(userId){
   if(fichaIds.length===0) return [];
   const {data:ingrData}=await supabase.from("ficha_ingredientes").select("*").in("ficha_id",fichaIds);
   const {data:subData}=await supabase.from("ficha_subreceitas").select("*").in("ficha_id",fichaIds);
+  const {data:embData}=await supabase.from("ficha_embalagens").select("*").in("ficha_id",fichaIds);
   return fichasData.map(f=>({
     ...f,
     ficha_ingredientes:(ingrData||[]).filter(i=>i.ficha_id===f.id),
     ficha_subreceitas:(subData||[]).filter(s=>s.ficha_id===f.id),
+    ficha_embalagens:(embData||[]).filter(e=>e.ficha_id===f.id),
   }));
 }
 
@@ -1405,6 +1561,7 @@ export default function App(){
   const [insumos,setInsumos]=useState([]);
   const [config,setConfig]=useState(null);
   const [fichas,setFichas]=useState([]);
+  const [embalagens,setEmbalagens]=useState([]);
   const [pedidos,setPedidos]=useState([]);
   const [saldoMensal,setSaldoMensal]=useState(null);
   const [saldoMensalData,setSaldoMensalData]=useState([]);
@@ -1422,12 +1579,13 @@ export default function App(){
   useEffect(()=>{
     if(!user) return;
     async function load(){
-      const [p,v,d,i,c]=await Promise.all([
+      const [p,v,d,i,c,emb]=await Promise.all([
         supabase.from("produtos").select("*").eq("user_id",user.id).order("created_at"),
         supabase.from("vendas").select("*").eq("user_id",user.id).order("data").order("hora"),
         supabase.from("despesas").select("*").eq("user_id",user.id).order("data").order("hora"),
         supabase.from("insumos").select("*").eq("user_id",user.id).order("nome"),
         supabase.from("config_confeitaria").select("*").eq("user_id",user.id).single(),
+        supabase.from("embalagens").select("*").eq("user_id",user.id).order("nome"),
       ]);
       const fichasCompletas=await fetchFichasCompletas(user.id);
       const now=new Date();
@@ -1442,6 +1600,7 @@ export default function App(){
       setDespesas(d.data||[]);
       setInsumos(i.data||[]);
       setConfig(c.data||null);
+      setEmbalagens(emb.data||[]);
       setFichas(fichasCompletas);
       setSaldoMensal(sm||null);
       setSaldoMensalData(smAll||[]);
@@ -1461,7 +1620,7 @@ export default function App(){
 
   async function handleLogout(){
     await supabase.auth.signOut();
-    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);setSaldoMensal(null);setSaldoMensalData([]);setAjustes([]);
+    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);setEmbalagens([]);setSaldoMensal(null);setSaldoMensalData([]);setAjustes([]);
   }
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.choco}}>
@@ -1493,11 +1652,13 @@ export default function App(){
       {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes}
         onNovaVenda={v=>setVendas(p=>[...p,v])} onNovaDespesa={d=>setDespesas(p=>[...p,d])}
         onNovoAjuste={a=>setAjustes(p=>[...p,a])}/>}
-      {tela==="precificacao"&&<Precificacao userId={user.id} produtos={produtos} insumos={insumos} fichas={fichas} config={config} onReloadFichas={reloadFichas}
+      {tela==="precificacao"&&<Precificacao userId={user.id} produtos={produtos} insumos={insumos} embalagens={embalagens} fichas={fichas} config={config} onReloadFichas={reloadFichas}
         onSalvarProduto={(p,e)=>setProdutos(prev=>e?prev.map(x=>x.id===p.id?p:x):[...prev,p])}
         onExcluirProduto={id=>setProdutos(p=>p.filter(x=>x.id!==id))}
         onSalvarInsumo={(i,e)=>setInsumos(prev=>e?prev.map(x=>x.id===i.id?i:x):[...prev,i])}
         onExcluirInsumo={id=>setInsumos(p=>p.filter(x=>x.id!==id))}
+        onSalvarEmbalagem={(em,e)=>setEmbalagens(prev=>e?prev.map(x=>x.id===em.id?em:x):[...prev,em])}
+        onExcluirEmbalagem={id=>setEmbalagens(p=>p.filter(x=>x.id!==id))}
         onSalvarFicha={(f,e)=>setFichas(prev=>e?prev.map(x=>x.id===f.id?f:x):[...prev,f])}
         onExcluirFicha={id=>setFichas(p=>p.filter(x=>x.id!==id))}/>}
       {tela==="config"&&<Config userId={user.id} config={config} onSalvar={c=>setConfig(c)}/>}
