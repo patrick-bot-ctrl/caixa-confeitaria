@@ -1454,10 +1454,112 @@ function RelatorioMensal({vendas,despesas,ajustes,saldoMensalData,onFechar}){
 }
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
-function Config({userId,config,onSalvar}){
+const PLATAFORMAS_PRESET = [
+  {nome:"iFood",emoji:"🛵"},
+  {nome:"99Food",emoji:"🚗"},
+  {nome:"Rappi",emoji:"🛴"},
+  {nome:"Uber Eats",emoji:"🚙"},
+  {nome:"Goomer",emoji:"📱"},
+  {nome:"Anota AI",emoji:"📋"},
+];
+
+function Plataformas({userId,plataformas,onSalvar,onExcluir}){
+  const [nomeSelecionado,setNomeSelecionado]=useState("");
+  const [nomeManual,setNomeManual]=useState("");
+  const [taxa,setTaxa]=useState("");
+  const [mensalidade,setMensalidade]=useState("");
+  const [editId,setEditId]=useState(null);
+  const [loading,setLoading]=useState(false);
+
+  const nomeFinal = nomeSelecionado==="outra" ? nomeManual : nomeSelecionado;
+
+  async function salvar(){
+    if(!nomeFinal.trim()||!taxa) return;
+    setLoading(true);
+    const payload={user_id:userId,nome:nomeFinal,taxa_percentual:parseFloat(taxa)||0,mensalidade:parseFloat(mensalidade)||0};
+    let result;
+    if(editId){
+      const {data}=await supabase.from("plataformas_venda").update(payload).eq("id",editId).select().single();
+      result={data,edit:true};
+    } else {
+      const {data}=await supabase.from("plataformas_venda").insert(payload).select().single();
+      result={data,edit:false};
+    }
+    setLoading(false);
+    if(result.data){onSalvar(result.data,result.edit);limpar();}
+  }
+
+  async function excluir(id){
+    await supabase.from("plataformas_venda").delete().eq("id",id);
+    onExcluir(id);
+  }
+
+  function editar(p){
+    setEditId(p.id);
+    const preset=PLATAFORMAS_PRESET.find(x=>x.nome===p.nome);
+    if(preset){setNomeSelecionado(p.nome);setNomeManual("");}
+    else {setNomeSelecionado("outra");setNomeManual(p.nome);}
+    setTaxa(String(p.taxa_percentual));setMensalidade(String(p.mensalidade||""));
+  }
+
+  function limpar(){setEditId(null);setNomeSelecionado("");setNomeManual("");setTaxa("");setMensalidade("");}
+
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <Card style={{border:editId?`2px solid ${T.rosa}`:"none"}}>
+      <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:12,letterSpacing:.5}}>
+        {editId?"✏️ EDITANDO PLATAFORMA":"➕ NOVA PLATAFORMA"}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:11}}>
+        <Select label="Plataforma" value={nomeSelecionado} onChange={setNomeSelecionado}
+          options={[{value:"",label:"Selecione..."},...PLATAFORMAS_PRESET.map(p=>({value:p.nome,label:`${p.emoji} ${p.nome}`})),{value:"outra",label:"✏️ Outra (digitar nome)"}]}/>
+        {nomeSelecionado==="outra"&&<Input label="Nome da plataforma" value={nomeManual} onChange={setNomeManual} placeholder="Ex: Loja própria"/>}
+        <Input label="Taxa sobre a venda (%)" type="number" value={taxa} onChange={setTaxa} placeholder="12"/>
+        <Input label="Mensalidade (R$, opcional)" type="number" value={mensalidade} onChange={setMensalidade} placeholder="0,00"/>
+
+        <div style={{display:"flex",gap:8}}>
+          <Btn loading={loading} style={{flex:1}} onClick={salvar} disabled={!nomeFinal||!taxa}>
+            {editId?"✓ Salvar":"➕ Adicionar"}
+          </Btn>
+          {editId&&<Btn variant="ghost" onClick={limpar}>Cancelar</Btn>}
+        </div>
+      </div>
+    </Card>
+
+    <Secao titulo={`PLATAFORMAS CADASTRADAS (${plataformas.length})`}>
+      {plataformas.length===0&&<p style={{fontFamily:"system-ui",fontSize:13,color:T.chocoM,padding:"8px 0"}}>Nenhuma plataforma cadastrada ainda.</p>}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {plataformas.map(p=>{
+          const preset=PLATAFORMAS_PRESET.find(x=>x.nome===p.nome);
+          return <Card key={p.id} style={{padding:"12px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{fontFamily:"system-ui",fontSize:13,color:T.choco,fontWeight:700}}>{preset?.emoji||"🏪"} {p.nome}</div>
+                <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,marginTop:2}}>
+                  Taxa: {p.taxa_percentual}% {p.mensalidade>0?`· Mensalidade: ${brl(p.mensalidade)}`:""}
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontFamily:"Georgia,serif",fontSize:16,color:T.amarelo,fontWeight:700}}>{p.taxa_percentual}%</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <Btn variant="ghost" style={{flex:1,padding:"6px 0",fontSize:11}} onClick={()=>editar(p)}>✏️ Editar</Btn>
+              <Btn variant="danger" style={{flex:1,padding:"6px 0",fontSize:11}} onClick={()=>excluir(p.id)}>🗑️ Excluir</Btn>
+            </div>
+          </Card>;
+        })}
+      </div>
+    </Secao>
+  </div>;
+}
+
+function Config({userId,config,onSalvar,plataformas,onSalvarPlataforma,onExcluirPlataforma}){
+  const [sub,setSub]=useState("geral");
   const [salario,setSalario]=useState(String(config?.salario_mensal||""));
   const [horas,setHoras]=useState(String(config?.horas_mes||""));
   const [custosFixos,setCustosFixos]=useState(String(config?.custos_fixos_mes||""));
+  const [taxaDebito,setTaxaDebito]=useState(String(config?.taxa_debito||""));
+  const [taxaCredito,setTaxaCredito]=useState(String(config?.taxa_credito||""));
   const [loading,setLoading]=useState(false);
   const [salvo,setSalvo]=useState(false);
 
@@ -1466,7 +1568,7 @@ function Config({userId,config,onSalvar}){
 
   async function salvar(){
     setLoading(true);
-    const payload={user_id:userId,salario_mensal:parseFloat(salario)||0,horas_mes:parseFloat(horas)||0,custos_fixos_mes:parseFloat(custosFixos)||0};
+    const payload={user_id:userId,salario_mensal:parseFloat(salario)||0,horas_mes:parseFloat(horas)||0,custos_fixos_mes:parseFloat(custosFixos)||0,taxa_debito:parseFloat(taxaDebito)||0,taxa_credito:parseFloat(taxaCredito)||0};
     const {data:existing}=await supabase.from("config_confeitaria").select("id").eq("user_id",userId).single();
     let data;
     if(existing){
@@ -1482,7 +1584,11 @@ function Config({userId,config,onSalvar}){
 
   return <div style={{padding:"20px 16px",display:"flex",flexDirection:"column",gap:20}}>
     <h2 style={{fontFamily:"Georgia,serif",fontSize:20,color:T.choco,margin:0}}>⚙️ Configurações</h2>
+    <SubAba abas={[{id:"geral",emoji:"💰",label:"Geral"},{id:"plataformas",emoji:"🛵",label:"Plataformas"}]} ativa={sub} onChange={setSub}/>
 
+    {sub==="plataformas"&&<Plataformas userId={userId} plataformas={plataformas} onSalvar={onSalvarPlataforma} onExcluir={onExcluirPlataforma}/>}
+
+    {sub==="geral"&&<>
     <Card>
       <Secao titulo="MÃO DE OBRA">
         <div style={{display:"flex",flexDirection:"column",gap:11,marginTop:8}}>
@@ -1515,6 +1621,18 @@ function Config({userId,config,onSalvar}){
       </Secao>
     </Card>
 
+    <Card>
+      <Secao titulo="TAXAS DE CARTÃO">
+        <div style={{display:"flex",flexDirection:"column",gap:11,marginTop:8}}>
+          <Input label="Taxa cartão débito (%)" type="number" value={taxaDebito} onChange={setTaxaDebito} placeholder="1,5"/>
+          <Input label="Taxa cartão crédito (%)" type="number" value={taxaCredito} onChange={setTaxaCredito} placeholder="2,5"/>
+          <p style={{fontFamily:"system-ui",fontSize:11,color:T.chocoL,lineHeight:1.5}}>
+            Essas taxas serão usadas para calcular o valor líquido recebido em vendas no cartão.
+          </p>
+        </div>
+      </Secao>
+    </Card>
+
     {salvo&&<div style={{background:T.verdeL,borderRadius:10,padding:"10px 14px",fontFamily:"system-ui",fontSize:13,color:T.verde,fontWeight:700,textAlign:"center"}}>
       ✅ Configurações salvas!
     </div>}
@@ -1523,13 +1641,14 @@ function Config({userId,config,onSalvar}){
     <Card style={{background:T.cremedark}}>
       <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:8}}>🔜 EM BREVE</div>
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {["Taxas de plataformas (iFood, 99food...)","Taxas de cartão (débito/crédito)","Relatório mensal PDF"].map(item=>
+        {["Relatório mensal PDF"].map(item=>
           <div key={item} style={{fontFamily:"system-ui",fontSize:12,color:T.chocoL,display:"flex",alignItems:"center",gap:6}}>
             <span>⏳</span>{item}
           </div>
         )}
       </div>
     </Card>
+    </>}
   </div>;
 }
 
@@ -1562,6 +1681,7 @@ export default function App(){
   const [config,setConfig]=useState(null);
   const [fichas,setFichas]=useState([]);
   const [embalagens,setEmbalagens]=useState([]);
+  const [plataformas,setPlataformas]=useState([]);
   const [pedidos,setPedidos]=useState([]);
   const [saldoMensal,setSaldoMensal]=useState(null);
   const [saldoMensalData,setSaldoMensalData]=useState([]);
@@ -1579,13 +1699,14 @@ export default function App(){
   useEffect(()=>{
     if(!user) return;
     async function load(){
-      const [p,v,d,i,c,emb]=await Promise.all([
+      const [p,v,d,i,c,emb,plat]=await Promise.all([
         supabase.from("produtos").select("*").eq("user_id",user.id).order("created_at"),
         supabase.from("vendas").select("*").eq("user_id",user.id).order("data").order("hora"),
         supabase.from("despesas").select("*").eq("user_id",user.id).order("data").order("hora"),
         supabase.from("insumos").select("*").eq("user_id",user.id).order("nome"),
         supabase.from("config_confeitaria").select("*").eq("user_id",user.id).single(),
         supabase.from("embalagens").select("*").eq("user_id",user.id).order("nome"),
+        supabase.from("plataformas_venda").select("*").eq("user_id",user.id).order("nome"),
       ]);
       const fichasCompletas=await fetchFichasCompletas(user.id);
       const now=new Date();
@@ -1601,6 +1722,7 @@ export default function App(){
       setInsumos(i.data||[]);
       setConfig(c.data||null);
       setEmbalagens(emb.data||[]);
+      setPlataformas(plat.data||[]);
       setFichas(fichasCompletas);
       setSaldoMensal(sm||null);
       setSaldoMensalData(smAll||[]);
@@ -1620,7 +1742,7 @@ export default function App(){
 
   async function handleLogout(){
     await supabase.auth.signOut();
-    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);setEmbalagens([]);setSaldoMensal(null);setSaldoMensalData([]);setAjustes([]);
+    setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);setEmbalagens([]);setPlataformas([]);setSaldoMensal(null);setSaldoMensalData([]);setAjustes([]);
   }
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.choco}}>
@@ -1661,7 +1783,10 @@ export default function App(){
         onExcluirEmbalagem={id=>setEmbalagens(p=>p.filter(x=>x.id!==id))}
         onSalvarFicha={(f,e)=>setFichas(prev=>e?prev.map(x=>x.id===f.id?f:x):[...prev,f])}
         onExcluirFicha={id=>setFichas(p=>p.filter(x=>x.id!==id))}/>}
-      {tela==="config"&&<Config userId={user.id} config={config} onSalvar={c=>setConfig(c)}/>}
+      {tela==="config"&&<Config userId={user.id} config={config} onSalvar={c=>setConfig(c)}
+        plataformas={plataformas}
+        onSalvarPlataforma={(p,e)=>setPlataformas(prev=>e?prev.map(x=>x.id===p.id?p:x):[...prev,p])}
+        onExcluirPlataforma={id=>setPlataformas(p=>p.filter(x=>x.id!==id))}/>}
       {tela==="relatorio"&&<RelatorioMensal vendas={vendas} despesas={despesas} ajustes={ajustes} saldoMensalData={saldoMensalData} onFechar={()=>setTela("dashboard")}/>}
     </div>
   </div>;
