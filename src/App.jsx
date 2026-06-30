@@ -763,7 +763,7 @@ function Produtos({userId,produtos,onSalvar,onExcluir}){
 
 
 // ─── FICHAS TÉCNICAS ──────────────────────────────────────────────────────────
-function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
+function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReload}){
   const [tela,setTela]=useState("lista"); // lista | form | detalhe
   const [fichaAtual,setFichaAtual]=useState(null);
   const [nome,setNome]=useState("");
@@ -878,10 +878,9 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
       ficha_id:fichaId,sub_ficha_id:s.sub_ficha_id,quantidade:parseFloat(s.quantidade),unidade:s.unidade
     }));
     if(rowsSub.length>0) await supabase.from("ficha_subreceitas").insert(rowsSub);
-    const {data:updated}=await supabase.from("fichas_tecnicas")
-      .select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("id",fichaId).single();
     setLoading(false);
-    if(updated){onSalvar(updated,!!fichaAtual);limpar();}
+    await onReload();
+    limpar();
   }
 
   function limpar(){
@@ -1129,7 +1128,7 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir}){
 }
 
 // ─── PRECIFICAÇÃO (container com subabas) ─────────────────────────────────────
-function Precificacao({userId,produtos,insumos,fichas,config,onSalvarProduto,onExcluirProduto,onSalvarInsumo,onExcluirInsumo,onSalvarFicha,onExcluirFicha}){
+function Precificacao({userId,produtos,insumos,fichas,config,onReloadFichas,onSalvarProduto,onExcluirProduto,onSalvarInsumo,onExcluirInsumo,onSalvarFicha,onExcluirFicha}){
   const [sub,setSub]=useState("produtos");
   return <div style={{padding:"20px 16px",display:"flex",flexDirection:"column",gap:16}}>
     <h2 style={{fontFamily:"Georgia,serif",fontSize:20,color:T.choco,margin:0}}>🎂 Precificação</h2>
@@ -1138,7 +1137,7 @@ function Precificacao({userId,produtos,insumos,fichas,config,onSalvarProduto,onE
       ativa={sub} onChange={setSub}/>
     {sub==="produtos"&&<Produtos userId={userId} produtos={produtos} onSalvar={onSalvarProduto} onExcluir={onExcluirProduto}/>}
     {sub==="insumos"&&<Insumos userId={userId} insumos={insumos} onSalvar={onSalvarInsumo} onExcluir={onExcluirInsumo}/>}
-    {sub==="fichas"&&<FichasTecnicas userId={userId} fichas={fichas} insumos={insumos} config={config} onSalvar={onSalvarFicha} onExcluir={onExcluirFicha}/>}
+    {sub==="fichas"&&<FichasTecnicas userId={userId} fichas={fichas} insumos={insumos} config={config} onSalvar={onSalvarFicha} onExcluir={onExcluirFicha} onReload={onReloadFichas}/>}
   </div>;
 }
 
@@ -1440,6 +1439,11 @@ export default function App(){
     load();
   },[user]);
 
+  async function reloadFichas(){
+    const {data}=await supabase.from("fichas_tecnicas").select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("user_id",user.id).order("created_at");
+    setFichas(data||[]);
+  }
+
   async function handleLogout(){
     await supabase.auth.signOut();
     setUser(null);setProdutos([]);setVendas([]);setDespesas([]);setInsumos([]);setConfig(null);setFichas([]);setSaldoMensal(null);setSaldoMensalData([]);setAjustes([]);
@@ -1474,7 +1478,7 @@ export default function App(){
       {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes}
         onNovaVenda={v=>setVendas(p=>[...p,v])} onNovaDespesa={d=>setDespesas(p=>[...p,d])}
         onNovoAjuste={a=>setAjustes(p=>[...p,a])}/>}
-      {tela==="precificacao"&&<Precificacao userId={user.id} produtos={produtos} insumos={insumos} fichas={fichas} config={config}
+      {tela==="precificacao"&&<Precificacao userId={user.id} produtos={produtos} insumos={insumos} fichas={fichas} config={config} onReloadFichas={reloadFichas}
         onSalvarProduto={(p,e)=>setProdutos(prev=>e?prev.map(x=>x.id===p.id?p:x):[...prev,p])}
         onExcluirProduto={id=>setProdutos(p=>p.filter(x=>x.id!==id))}
         onSalvarInsumo={(i,e)=>setInsumos(prev=>e?prev.map(x=>x.id===i.id?i:x):[...prev,i])}
