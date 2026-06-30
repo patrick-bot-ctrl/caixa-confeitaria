@@ -1379,6 +1379,21 @@ function Config({userId,config,onSalvar}){
   </div>;
 }
 
+
+async function fetchFichasCompletas(userId){
+  const {data:fichasData,error:e1}=await supabase.from("fichas_tecnicas").select("*").eq("user_id",userId).order("created_at");
+  if(e1||!fichasData) return [];
+  const fichaIds=fichasData.map(f=>f.id);
+  if(fichaIds.length===0) return [];
+  const {data:ingrData}=await supabase.from("ficha_ingredientes").select("*").in("ficha_id",fichaIds);
+  const {data:subData}=await supabase.from("ficha_subreceitas").select("*").in("ficha_id",fichaIds);
+  return fichasData.map(f=>({
+    ...f,
+    ficha_ingredientes:(ingrData||[]).filter(i=>i.ficha_id===f.id),
+    ficha_subreceitas:(subData||[]).filter(s=>s.ficha_id===f.id),
+  }));
+}
+
 // ─── APP PRINCIPAL ─────────────────────────────────────────────────────────────
 export default function App(){
   const [user,setUser]=useState(null);
@@ -1407,14 +1422,14 @@ export default function App(){
   useEffect(()=>{
     if(!user) return;
     async function load(){
-      const [p,v,d,i,c,ft]=await Promise.all([
+      const [p,v,d,i,c]=await Promise.all([
         supabase.from("produtos").select("*").eq("user_id",user.id).order("created_at"),
         supabase.from("vendas").select("*").eq("user_id",user.id).order("data").order("hora"),
         supabase.from("despesas").select("*").eq("user_id",user.id).order("data").order("hora"),
         supabase.from("insumos").select("*").eq("user_id",user.id).order("nome"),
         supabase.from("config_confeitaria").select("*").eq("user_id",user.id).single(),
-        supabase.from("fichas_tecnicas").select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("user_id",user.id).order("created_at"),
       ]);
+      const fichasCompletas=await fetchFichasCompletas(user.id);
       const now=new Date();
       const anoAtual=now.getFullYear();
       const mesAtual=now.getMonth()+1;
@@ -1427,7 +1442,7 @@ export default function App(){
       setDespesas(d.data||[]);
       setInsumos(i.data||[]);
       setConfig(c.data||null);
-      setFichas(ft.data||[]);
+      setFichas(fichasCompletas);
       setSaldoMensal(sm||null);
       setSaldoMensalData(smAll||[]);
       setAjustes(aj||[]);
@@ -1440,9 +1455,8 @@ export default function App(){
   },[user]);
 
   async function reloadFichas(){
-    const {data,error}=await supabase.from("fichas_tecnicas").select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("user_id",user.id).order("created_at");
-    if(error) console.error("Erro ao recarregar fichas:",error);
-    setFichas(data||[]);
+    const fichasCompletas=await fetchFichasCompletas(user.id);
+    setFichas(fichasCompletas);
   }
 
   async function handleLogout(){
