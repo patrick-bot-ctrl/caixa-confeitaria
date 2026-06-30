@@ -878,8 +878,8 @@ function FichasTecnicas({userId,fichas,insumos,config,onSalvar,onExcluir,onReloa
       ficha_id:fichaId,sub_ficha_id:s.sub_ficha_id,quantidade:parseFloat(s.quantidade),unidade:s.unidade
     }));
     if(rowsSub.length>0) await supabase.from("ficha_subreceitas").insert(rowsSub);
-    setLoading(false);
     await onReload();
+    setLoading(false);
     limpar();
   }
 
@@ -1440,7 +1440,8 @@ export default function App(){
   },[user]);
 
   async function reloadFichas(){
-    const {data}=await supabase.from("fichas_tecnicas").select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("user_id",user.id).order("created_at");
+    const {data,error}=await supabase.from("fichas_tecnicas").select("*,ficha_ingredientes(*),ficha_subreceitas(*)").eq("user_id",user.id).order("created_at");
+    if(error) console.error("Erro ao recarregar fichas:",error);
     setFichas(data||[]);
   }
 
