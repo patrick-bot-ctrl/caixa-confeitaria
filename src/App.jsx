@@ -297,7 +297,7 @@ function Dashboard({user,vendas,despesas,produtos,ajustes,saldoInicial,saldoAtua
 }
 
 // ─── CAIXA ────────────────────────────────────────────────────────────────────
-function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespesa,onNovoAjuste}){
+function Caixa({userId,vendas,despesas,produtos,plataformas,config,ajustes,onNovaVenda,onNovaDespesa,onNovoAjuste}){
   const [aba,setAba]=useState("venda");
   const [descAjuste,setDescAjuste]=useState("");
   const [valorAjuste,setValorAjuste]=useState("");
@@ -315,6 +315,7 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
   const [adicionais,setAdicionais]=useState([]);
   const [formaPgto,setFormaPgto]=useState("pix");
   const [obsVenda,setObsVenda]=useState("");
+  const [plataformaVenda,setPlataformaVenda]=useState("direto");
 
   const prodSel=produtos.find(p=>p.id===produtoId);
   const precoItemSel=prodSel?precoFinal(prodSel):0;
@@ -338,7 +339,8 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
     if(carrinho.length===0) return;
     setLoading(true);
     const {data:pedido,error}=await supabase.from("pedidos").insert({
-      user_id:userId,total:parseFloat(totalCarrinho.toFixed(2)),forma_pgto:formaPgto,data:hoje(),hora:horaAgora(),observacao:obsVenda
+      user_id:userId,total:parseFloat(totalCarrinho.toFixed(2)),forma_pgto:formaPgto,
+      data:hoje(),hora:horaAgora(),observacao:obsVenda,plataforma_id:plataformaVenda!=="direto"?plataformaVenda:null
     }).select().single();
     if(!error&&pedido){
       for(const item of carrinho){
@@ -356,7 +358,7 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
         qtd:carrinho.reduce((s,i)=>s+i.qtd,0),total:parseFloat(totalCarrinho.toFixed(2)),
         data:hoje(),hora:horaAgora(),forma_pgto:formaPgto,pedido_id:pedido.id}).select().single();
       if(v) onNovaVenda(v);
-      setCarrinho([]);setFormaPgto("pix");setObsVenda("");
+      setCarrinho([]);setFormaPgto("pix");setObsVenda("");setPlataformaVenda("direto");
     }
     setLoading(false);
   }
@@ -448,6 +450,41 @@ function Caixa({userId,vendas,despesas,produtos,ajustes,onNovaVenda,onNovaDespes
             </button>)}
           </div>
         </div>
+        {plataformas&&plataformas.length>0&&<div style={{marginTop:12}}>
+          <div style={{fontFamily:"system-ui",fontSize:12,color:T.chocoM,fontWeight:600,marginBottom:8}}>Canal de venda (opcional)</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {[{id:"direto",label:"Direto",emoji:"💵"},...plataformas.map(p=>({id:p.id,label:p.nome,emoji:"📱"}))].map(c=>
+              <button key={c.id} onClick={()=>setPlataformaVenda(c.id)}
+                style={{padding:"7px 12px",border:`2px solid ${plataformaVenda===c.id?T.rosa:T.borda}`,borderRadius:9,cursor:"pointer",
+                  background:plataformaVenda===c.id?T.rosaL:T.branco,fontFamily:"system-ui",fontSize:12,fontWeight:600,
+                  color:plataformaVenda===c.id?T.rosa:T.chocoM}}>
+                {c.emoji} {c.label}
+              </button>
+            )}
+          </div>
+          {(()=>{
+            let taxa=0;
+            if(plataformaVenda==="debito") taxa=(config?.taxa_debito||0)/100;
+            else if(plataformaVenda==="credito") taxa=(config?.taxa_credito||0)/100;
+            else if(plataformaVenda!=="direto"){
+              const plat=(plataformas||[]).find(p=>p.id===plataformaVenda);
+              if(plat) taxa=plat.taxa_percentual/100;
+            }
+            const taxaValor=totalCarrinho*taxa;
+            const liquido=totalCarrinho-taxaValor;
+            if(taxa===0) return null;
+            return <div style={{marginTop:8,background:T.vermelhoL,borderRadius:9,padding:"8px 12px"}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontFamily:"system-ui",fontSize:12,color:T.vermelho}}>Taxa ({(taxa*100).toFixed(1)}%)</span>
+                <span style={{fontFamily:"Georgia,serif",fontSize:13,color:T.vermelho,fontWeight:700}}>-{brl(taxaValor)}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+                <span style={{fontFamily:"system-ui",fontSize:12,color:T.verde,fontWeight:700}}>Você recebe líquido</span>
+                <span style={{fontFamily:"Georgia,serif",fontSize:14,color:T.verde,fontWeight:700}}>{brl(liquido)}</span>
+              </div>
+            </div>;
+          })()}
+        </div>}
         <Btn loading={loading} onClick={confirmarPedido} style={{marginTop:12,width:"100%"}}>✓ Confirmar Pedido — {brl(totalCarrinho)}</Btn>
       </Card>}
     </div>}
@@ -859,7 +896,7 @@ function Produtos({userId,produtos,onSalvar,onExcluir}){
 
 
 // ─── FICHAS TÉCNICAS ──────────────────────────────────────────────────────────
-function FichasTecnicas({userId,fichas,insumos,embalagens,config,onSalvar,onExcluir,onReload}){
+function FichasTecnicas({userId,fichas,insumos,embalagens,config,plataformas,onSalvar,onExcluir,onReload}){
   const [tela,setTela]=useState("lista"); // lista | form | detalhe
   const [fichaAtual,setFichaAtual]=useState(null);
   const [nome,setNome]=useState("");
@@ -874,6 +911,7 @@ function FichasTecnicas({userId,fichas,insumos,embalagens,config,onSalvar,onExcl
   const [ingredientes,setIngredientes]=useState([]);
   const [subReceitas,setSubReceitas]=useState([]);
   const [embFicha,setEmbFicha]=useState([]);
+  const [canalDRE,setCanalDRE]=useState("direto");
   const [loading,setLoading]=useState(false);
 
   const valorMin=config?(config.salario_mensal/config.horas_mes/60):0;
@@ -941,7 +979,7 @@ function FichasTecnicas({userId,fichas,insumos,embalagens,config,onSalvar,onExcl
   const unidades=parseInt(rendUnid||1);
   const custoPorUnidade=unidades>0?custoTotal/unidades:0;
 
-  function calcDRE(ficha,depth=0){
+  function calcDRE(ficha,depth=0,canalId=null){
     if(depth>3) return {totIngr:0,totSub:0,mo:0,emb:0,total:0,custoPorUnidade:0};
     const vm=config?(config.salario_mensal/config.horas_mes/60):0;
     const ingrs=ficha.ficha_ingredientes||[];
@@ -964,12 +1002,25 @@ function FichasTecnicas({userId,fichas,insumos,embalagens,config,onSalvar,onExcl
       return s+(e.preco_embalagem/e.qtd_embalagem)*fe.quantidade;
     },0);
     const mo=vm*(ficha.tempo_preparo_min||0);
-    const cfMin=custosFixosMes>0&&config?.horas_mes>0?(custosFixosMes/(config.horas_mes*60)):0;
+    // Mensalidades das plataformas somam aos custos fixos
+    const totalMensalidades=(plataformas||[]).reduce((s,p)=>s+(p.mensalidade||0),0);
+    const custosFixosTotal=custosFixosMes+totalMensalidades;
+    const cfMin=custosFixosTotal>0&&config?.horas_mes>0?(custosFixosTotal/(config.horas_mes*60)):0;
     const cf=cfMin*(ficha.tempo_preparo_min||0);
     const emb=(ficha.custo_embalagem||0)+(ficha.custo_rotulo||0)+(ficha.custo_outros||0)+totEmbFicha;
-    const total=totIngr+totSub+mo+cf+emb;
+    const custoBase=totIngr+totSub+mo+cf+emb;
     const u=ficha.rendimento_unidades||1;
-    return {totIngr,totSub,mo,cf,emb,total,custoPorUnidade:total/u};
+    const custoPorUnidade=custoBase/u;
+    // Taxa do canal de venda
+    let taxaCanal=0;
+    let nomeCanal="";
+    if(canalId==="debito"){taxaCanal=(config?.taxa_debito||0)/100;nomeCanal="Cartão Débito";}
+    else if(canalId==="credito"){taxaCanal=(config?.taxa_credito||0)/100;nomeCanal="Cartão Crédito";}
+    else if(canalId&&canalId!=="direto"){
+      const plat=(plataformas||[]).find(p=>p.id===canalId);
+      if(plat){taxaCanal=plat.taxa_percentual/100;nomeCanal=plat.nome;}
+    }
+    return {totIngr,totSub,mo,cf,emb,custoBase,total:custoBase,custoPorUnidade,taxaCanal,nomeCanal,u};
   }
 
   async function salvar(){
@@ -1063,13 +1114,16 @@ function FichasTecnicas({userId,fichas,insumos,embalagens,config,onSalvar,onExcl
 
   // ── DRE DETALHE ──
   if(tela==="detalhe"&&fichaAtual){
-    const dre=calcDRE(fichaAtual);
+    const dre=calcDRE(fichaAtual,0,canalDRE);
+    const precoIdeal=dre.taxaCanal>0?dre.custoPorUnidade/(1-dre.taxaCanal):null;
+    const taxaValor=precoIdeal?precoIdeal*dre.taxaCanal:0;
     const itens=[
       {label:"🧂 Ingredientes",valor:dre.totIngr,cor:T.azul},
       {label:"🔗 Sub-receitas",valor:dre.totSub||0,cor:T.verde},
       {label:"📦 Embalagem + Rótulo",valor:dre.emb,cor:T.roxo},
       {label:"👩‍🍳 Mão de obra",valor:dre.mo,cor:T.amarelo},
       {label:"🏠 Custos fixos",valor:dre.cf||0,cor:T.chocoM},
+      {label:`📱 Taxa ${dre.nomeCanal}`,valor:taxaValor,cor:T.vermelho},
     ].filter(it=>it.valor>0);
     return <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <button onClick={()=>setTela("lista")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:T.chocoM,textAlign:"left",padding:0}}>← Voltar</button>
@@ -1078,14 +1132,32 @@ function FichasTecnicas({userId,fichas,insumos,embalagens,config,onSalvar,onExcl
         <div style={{fontFamily:"system-ui",fontSize:11,color:"rgba(255,255,255,.5)"}}>Rende {fichaAtual.rendimento_unidades} unidades · {fichaAtual.tempo_preparo_min}min</div>
         <div style={{marginTop:14,display:"flex",justifyContent:"space-between"}}>
           <div>
-            <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700}}>CUSTO TOTAL</div>
-            <div style={{fontFamily:"Georgia,serif",fontSize:24,color:"#fff",fontWeight:700}}>{brl(dre.total)}</div>
-          </div>
-          <div style={{textAlign:"right"}}>
             <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700}}>CUSTO/UNIDADE</div>
             <div style={{fontFamily:"Georgia,serif",fontSize:24,color:T.rosaL,fontWeight:700}}>{brl(dre.custoPorUnidade)}</div>
           </div>
+          {precoIdeal&&<div style={{textAlign:"right"}}>
+            <div style={{fontFamily:"system-ui",fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700}}>PREÇO IDEAL ({dre.nomeCanal})</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:24,color:"#7fe8b0",fontWeight:700}}>{brl(precoIdeal)}</div>
+          </div>}
         </div>
+      </Card>
+
+      {/* Seletor de canal */}
+      <Card>
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoM,fontWeight:700,marginBottom:10,letterSpacing:.5}}>📱 SIMULAR CANAL DE VENDA</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          {[{id:"direto",label:"Direto",emoji:"💵"},...(plataformas||[]).map(p=>({id:p.id,label:p.nome,emoji:"📱"})),{id:"debito",label:"Débito",emoji:"💳"},{id:"credito",label:"Crédito",emoji:"💳"}].map(c=>
+            <button key={c.id} onClick={()=>setCanalDRE(c.id)}
+              style={{padding:"7px 12px",border:`2px solid ${canalDRE===c.id?T.rosa:T.borda}`,borderRadius:9,cursor:"pointer",
+                background:canalDRE===c.id?T.rosaL:T.branco,fontFamily:"system-ui",fontSize:12,fontWeight:700,
+                color:canalDRE===c.id?T.rosa:T.chocoM}}>
+              {c.emoji} {c.label}
+            </button>
+          )}
+        </div>
+        {dre.taxaCanal>0&&<div style={{marginTop:10,background:T.vermelhoL,borderRadius:9,padding:"8px 12px",fontFamily:"system-ui",fontSize:12,color:T.vermelho}}>
+          Taxa de {(dre.taxaCanal*100).toFixed(1)}% → desconta {brl(taxaValor)} por unidade
+        </div>}
       </Card>
 
       <Card>
@@ -1131,10 +1203,20 @@ function FichasTecnicas({userId,fichas,insumos,embalagens,config,onSalvar,onExcl
 
       <Card style={{background:T.amareloL,border:`1.5px solid #f0d080`}}>
         <div style={{fontFamily:"system-ui",fontSize:11,color:T.amarelo,fontWeight:700,marginBottom:8}}>💡 SUGESTÃO DE PREÇO</div>
-        {[30,40,50].map(m=><div key={m} style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
-          <span style={{fontFamily:"system-ui",fontSize:13,color:T.choco}}>Margem {m}%</span>
-          <span style={{fontFamily:"Georgia,serif",fontSize:14,color:T.choco,fontWeight:700}}>{brl(dre.custoPorUnidade/(1-m/100))}</span>
-        </div>)}
+        <div style={{fontFamily:"system-ui",fontSize:11,color:T.chocoL,marginBottom:8}}>
+          {dre.taxaCanal>0?`Já inclui taxa de ${(dre.taxaCanal*100).toFixed(1)}% (${dre.nomeCanal})`:"Venda direta (sem taxa de plataforma)"}
+        </div>
+        {[30,40,50].map(m=>{
+          const base=dre.custoPorUnidade/(1-m/100);
+          const comTaxa=dre.taxaCanal>0?base/(1-dre.taxaCanal):base;
+          return <div key={m} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T.borda}`}}>
+            <span style={{fontFamily:"system-ui",fontSize:13,color:T.choco}}>Margem {m}%</span>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontFamily:"Georgia,serif",fontSize:14,color:T.choco,fontWeight:700}}>{brl(comTaxa)}</div>
+              {dre.taxaCanal>0&&<div style={{fontFamily:"system-ui",fontSize:10,color:T.chocoL}}>lucro líquido: {brl(base-dre.custoPorUnidade)}</div>}
+            </div>
+          </div>;
+        })}
       </Card>
     </div>;
   }
@@ -1281,7 +1363,7 @@ function FichasTecnicas({userId,fichas,insumos,embalagens,config,onSalvar,onExcl
 }
 
 // ─── PRECIFICAÇÃO (container com subabas) ─────────────────────────────────────
-function Precificacao({userId,produtos,insumos,embalagens,fichas,config,onReloadFichas,onSalvarProduto,onExcluirProduto,onSalvarInsumo,onExcluirInsumo,onSalvarEmbalagem,onExcluirEmbalagem,onSalvarFicha,onExcluirFicha}){
+function Precificacao({userId,produtos,insumos,embalagens,fichas,config,plataformas,onReloadFichas,onSalvarProduto,onExcluirProduto,onSalvarInsumo,onExcluirInsumo,onSalvarEmbalagem,onExcluirEmbalagem,onSalvarFicha,onExcluirFicha}){
   const [sub,setSub]=useState("produtos");
   return <div style={{padding:"20px 16px",display:"flex",flexDirection:"column",gap:16}}>
     <h2 style={{fontFamily:"Georgia,serif",fontSize:20,color:T.choco,margin:0}}>🎂 Precificação</h2>
@@ -1291,7 +1373,7 @@ function Precificacao({userId,produtos,insumos,embalagens,fichas,config,onReload
     {sub==="produtos"&&<Produtos userId={userId} produtos={produtos} onSalvar={onSalvarProduto} onExcluir={onExcluirProduto}/>}
     {sub==="insumos"&&<Insumos userId={userId} insumos={insumos} onSalvar={onSalvarInsumo} onExcluir={onExcluirInsumo}/>}
     {sub==="embalagens"&&<Embalagens userId={userId} embalagens={embalagens} onSalvar={onSalvarEmbalagem} onExcluir={onExcluirEmbalagem}/>}
-    {sub==="fichas"&&<FichasTecnicas userId={userId} fichas={fichas} insumos={insumos} embalagens={embalagens} config={config} onSalvar={onSalvarFicha} onExcluir={onExcluirFicha} onReload={onReloadFichas}/>}
+    {sub==="fichas"&&<FichasTecnicas userId={userId} fichas={fichas} insumos={insumos} embalagens={embalagens} config={config} plataformas={plataformas} onSalvar={onSalvarFicha} onExcluir={onExcluirFicha} onReload={onReloadFichas}/>}
   </div>;
 }
 
@@ -1771,10 +1853,10 @@ export default function App(){
     <Nav tela={tela} setTela={setTela}/>
     <div style={{paddingBottom:40}}>
       {tela==="dashboard"&&<Dashboard user={user} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes} saldoInicial={saldoInicialMes} saldoAtual={saldoAtual} totalVendasMes={totalVendasMes} totalDespMes={totalDespMes} totalAjustesMes={totalAjustesMes} setTela={setTela} onLogout={handleLogout} onAbrirSaldo={()=>setShowSaldoModal(true)} setShowRelatorio={(v)=>setTela(v?"relatorio":"dashboard")}/>}
-      {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos} ajustes={ajustes}
+      {tela==="caixa"&&<Caixa userId={user.id} vendas={vendas} despesas={despesas} produtos={produtos} plataformas={plataformas} config={config} ajustes={ajustes}
         onNovaVenda={v=>setVendas(p=>[...p,v])} onNovaDespesa={d=>setDespesas(p=>[...p,d])}
         onNovoAjuste={a=>setAjustes(p=>[...p,a])}/>}
-      {tela==="precificacao"&&<Precificacao userId={user.id} produtos={produtos} insumos={insumos} embalagens={embalagens} fichas={fichas} config={config} onReloadFichas={reloadFichas}
+      {tela==="precificacao"&&<Precificacao userId={user.id} produtos={produtos} insumos={insumos} embalagens={embalagens} fichas={fichas} config={config} plataformas={plataformas} onReloadFichas={reloadFichas}
         onSalvarProduto={(p,e)=>setProdutos(prev=>e?prev.map(x=>x.id===p.id?p:x):[...prev,p])}
         onExcluirProduto={id=>setProdutos(p=>p.filter(x=>x.id!==id))}
         onSalvarInsumo={(i,e)=>setInsumos(prev=>e?prev.map(x=>x.id===i.id?i:x):[...prev,i])}
